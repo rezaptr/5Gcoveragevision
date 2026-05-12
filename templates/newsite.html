@@ -33,7 +33,16 @@
   <div class="map-panel">
     <div id="newsiteMap"></div>
 
-    <!-- Legend overlay -->
+    <!-- Instruction Overlay -->
+    <div id="mapInstructions" class="map-instructions">
+      <div class="instruction-content">
+        <i class="fas fa-map-marker-alt"></i>
+        <p>Klik peta untuk menempatkan site</p>
+        <small>atau masukkan koordinat di panel kanan</small>
+      </div>
+    </div>
+
+    <!-- Legend Overlay -->
     <div id="mapLegend" class="map-legend" style="display:none;">
       <h4 id="legendTitle">RSRP (dBm)</h4>
       <table>
@@ -41,7 +50,7 @@
           <tr>
             <th></th>
             <th>Rentang</th>
-            <th></th>
+            <th>Kategori</th>
             <th>%</th>
           </tr>
         </thead>
@@ -50,162 +59,280 @@
     </div>
   </div>
 
-  <!-- RIGHT — CONFIGURATION -->
+  <!-- RIGHT — PANEL -->
   <div class="analysis-panel">
-    <h2>Konfigurasi &amp; Analisis Site</h2>
 
-    <!-- LOKASI -->
-    <div class="control-card">
-      <h3><i class="fas fa-map-marker-alt"></i> Lokasi Site</h3>
-
-      <div class="location-input-group">
-        <div class="control-group">
-          <label>Latitude</label>
-          <input type="number" id="siteLatitude" placeholder="-6.208800" step="0.000001" min="-90" max="90">
-        </div>
-        <div class="control-group">
-          <label>Longitude</label>
-          <input type="number" id="siteLongitude" placeholder="106.845600" step="0.000001" min="-180" max="180">
-        </div>
-        <button id="setSiteLocationBtn" class="set-location-btn">
-          <i class="fas fa-map-pin"></i> Set Lokasi
-        </button>
-      </div>
-
-      <div class="current-location" id="currentLocation" style="display:none;">
-        <i class="fas fa-check-circle"></i>
-        <span id="locationText">Site belum ditentukan</span>
-      </div>
+    <!-- Sticky Header -->
+    <div class="panel-header">
+      <h2>Konfigurasi &amp; Analisis Site</h2>
+      <p class="subtitle">Atur parameter antena, propagasi, dan visualisasikan coverage prediksi</p>
     </div>
 
-    <!-- KONFIGURASI SITE -->
-    <div class="control-card">
-      <h3><i class="fas fa-broadcast-tower"></i> Konfigurasi Antena</h3>
+    <div class="panel-body">
 
-      <div class="control-group">
-        <label>Jumlah Sektor</label>
-        <select id="sectorCount">
-          <option value="1">1 Sektor (Omni)</option>
-          <option value="2">2 Sektor</option>
-          <option value="3" selected>3 Sektor</option>
-          <option value="4">4 Sektor</option>
-          <option value="6">6 Sektor</option>
-        </select>
+      <!-- Mode Badge -->
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+        <span id="planningModeBadge">✏️ Manual Mode</span>
       </div>
 
-      <!-- Azimuth inputs generated dynamically -->
-      <div id="azimuthInputs" class="azimuth-inputs"></div>
+      <!-- Gap Context Panel (Gap-Guided Only) -->
+      <div id="gapContextPanel" style="display:none;"></div>
 
-      <div class="control-group">
-        <label>Tinggi Antena (meter)</label>
-        <div class="height-control">
-          <input type="number" id="antennaHeight" value="30" min="10" max="120" step="5">
-          <span class="height-badge" id="heightBadge">30m</span>
-        </div>
-        <small class="help-text">↑ Makin tinggi → path loss berkurang → RSRP lebih baik</small>
-      </div>
-    </div>
-
-    <!-- PARAMETER COVERAGE -->
-    <div class="control-card">
-      <h3><i class="fas fa-sliders-h"></i> Parameter Coverage</h3>
-
-      <div class="control-group">
-        <label>Model Propagasi</label>
-        <select id="propagationModel">
-          <option value="urban_macro" selected>Urban Macro</option>
-          <option value="urban_micro">Urban Micro</option>
-          <option value="suburban">Suburban</option>
-          <option value="rural">Rural</option>
-        </select>
-        <small class="help-text">Urban Macro untuk area luas, Micro untuk dense urban</small>
+      <!-- Manual Mode Hint -->
+      <div id="manualModeHint" class="analysis-info" style="font-size:11.5px; margin-bottom:12px;">
+        <i class="fas fa-pencil-alt" style="margin-right:6px;"></i>
+        <b>Mode Manual</b> — Pilih lokasi bebas di peta atau masukkan koordinat.
       </div>
 
-      <!-- ✅ TAMBAHAN: CLUTTER / ENVIRONMENT -->
-      <div class="control-group">
-        <label>Tipe Lingkungan (Clutter)</label>
-        <select id="clutterSelect" class="dropdown-model">
-          <option value="urban" selected>Urban</option>
-          <option value="dense_urban">Dense Urban</option>
-          <option value="metropolitan">Metropolitan</option>
-          <option value="sub_urban">Sub Urban</option>
-          <option value="rural">Rural</option>
-        </select>
-        <small class="help-text">Menentukan kondisi lingkungan untuk akurasi propagasi</small>
+      <!-- ═══════════════════════════════════════════ -->
+      <!-- SECTION 1: LOKASI SITE                     -->
+      <!-- ═══════════════════════════════════════════ -->
+      <div class="section-label">
+        <i class="fas fa-map-marker-alt"></i>
+        Lokasi Site
       </div>
 
-      <!-- ✅ TAMBAHAN: MODEL LABEL -->
-      <div class="control-group">
-        <label>Model Aktif</label>
-        <span id="paramModel" style="color:#00c7be; font-weight:600;">
-          UMA NLOS
-        </span>
-      </div>
-
-      <div class="control-group">
-        <label>Tipe Coverage</label>
-        <div class="viz-button-group">
-          <button id="visualizeRSRP" class="viz-btn-compact active">
-            <i class="fas fa-signal"></i> RSRP
-          </button>
-          <button id="visualizeSINR" class="viz-btn-compact">
-            <i class="fas fa-broadcast-tower"></i> SINR
+      <div class="control-card">
+        <div class="location-input-group">
+          <div class="control-group">
+            <label>Latitude</label>
+            <input type="number" id="siteLatitude" placeholder="-6.208800" step="0.000001" min="-90" max="90">
+          </div>
+          <div class="control-group">
+            <label>Longitude</label>
+            <input type="number" id="siteLongitude" placeholder="106.845600" step="0.000001" min="-180" max="180">
+          </div>
+          <button id="setSiteLocationBtn" class="set-location-btn">
+            <i class="fas fa-map-pin"></i> Set Lokasi di Peta
           </button>
         </div>
-      </div>
-
-      <div class="control-group">
-        <label>Grid Size (meter)</label>
-        <select id="gridSize">
-          <option value="10">10 m</option>
-          <option value="25">25 m</option>
-          <option value="50" selected>50 m</option>
-          <option value="100">100 m</option>
-          <option value="150">150 m</option>
-        </select>
-      </div>
-
-      <div class="control-group">
-        <label>Radius Coverage (meter)</label>
-        <input type="number" id="coverageRadius" value="500" min="100" max="2000" step="50">
-      </div>
-    </div>
-
-    <!-- HASIL ANALISIS -->
-    <div class="stats-card">
-      <h3><i class="fas fa-chart-line"></i> Prediksi Coverage</h3>
-      <div id="analysisResult" class="analysis-content">
-        <div class="waiting-state">
-          <i class="fas fa-hand-pointer"></i>
-          <p>Tentukan lokasi site untuk melihat prediksi coverage</p>
+        <div class="current-location" id="currentLocation" style="display:none;">
+          <i class="fas fa-check-circle"></i>
+          <span id="locationText">Site belum ditentukan</span>
         </div>
       </div>
-    </div>
 
-    <!-- STATISTIK -->
-    <div class="detailed-stats">
-      <h3><i class="fas fa-chart-pie"></i> Statistik Coverage</h3>
-      <div class="stats-grid">
-        <div class="stat-box">
-          <label>Total Area</label>
-          <span id="totalArea">0 km²</span>
+      <!-- ═══════════════════════════════════════════ -->
+      <!-- SECTION 2: KONFIGURASI ANTENA              -->
+      <!-- ═══════════════════════════════════════════ -->
+      <div class="section-label">
+        <i class="fas fa-broadcast-tower"></i>
+        Konfigurasi Antena
+      </div>
+
+      <div class="control-card">
+
+        <div class="control-group">
+          <label>Jumlah Sektor</label>
+          <select id="sectorCount">
+            <option value="1">1 Sektor (Omni)</option>
+            <option value="2">2 Sektor</option>
+            <option value="3" selected>3 Sektor</option>
+            <option value="4">4 Sektor</option>
+            <option value="6">6 Sektor</option>
+          </select>
         </div>
-        <div class="stat-box excellent">
-          <label>Excellent</label>
-          <span id="excellentCoverage">0%</span>
+
+        <!-- Azimuth inputs (dynamic) -->
+        <div id="azimuthInputs" class="azimuth-inputs"></div>
+
+        <!-- Gap-Guided Buttons -->
+        <div class="gap-action-row">
+          <button id="btnSuggestAzimuth">🧭 Suggest Azimuth</button>
+          <button id="btnResetManual">✕ Reset ke Manual</button>
         </div>
-        <div class="stat-box good">
-          <label>Good</label>
-          <span id="goodCoverage">0%</span>
+
+        <div class="param-divider"></div>
+
+        <div class="control-group">
+          <label>Tinggi Antena</label>
+          <div class="height-control">
+            <div class="input-with-unit">
+              <input type="number" id="antennaHeight" value="30" min="10" max="120" step="5">
+              <span class="unit-tag">meter</span>
+            </div>
+            <span class="height-badge" id="heightBadge">30m</span>
+          </div>
+          <small class="help-text">↑ Makin tinggi → path loss berkurang → RSRP lebih baik</small>
         </div>
-        <div class="stat-box poor">
-          <label>Poor</label>
-          <span id="poorCoverage">0%</span>
+
+        <div class="control-group">
+          <label>Antenna Beamwidth (horizontal)</label>
+          <div class="model-display">
+            <span class="label">Nilai tetap</span>
+            <span class="value">35°</span>
+          </div>
+          <small class="help-text">Beamwidth horizontal per sektor (fixed 3-sector pattern)</small>
+        </div>
+
+      </div><!-- /control-card antena -->
+
+      <!-- ═══════════════════════════════════════════ -->
+      <!-- SECTION 3: PARAMETER RF (Frontend Control) -->
+      <!-- ═══════════════════════════════════════════ -->
+      <div class="section-label">
+        <i class="fas fa-sliders-h"></i>
+        Parameter RF
+      </div>
+
+      <!-- Clutter & Propagation -->
+      <div class="control-card">
+
+        <div class="control-group">
+          <label>Tipe Lingkungan (Clutter)</label>
+          <select id="clutterSelect">
+            <option value="urban" selected>Urban</option>
+            <option value="dense_urban">Dense Urban</option>
+            <option value="metropolitan">Metropolitan</option>
+            <option value="sub_urban">Sub Urban</option>
+            <option value="rural">Rural</option>
+          </select>
+          <small class="help-text">Menentukan skenario 3GPP TR 38.901 yang digunakan</small>
+        </div>
+
+        <div class="control-group">
+          <label>Model Propagasi Aktif</label>
+          <div class="model-display">
+            <span class="label">Model</span>
+            <span class="value" id="paramModel">UMA NLOS</span>
+          </div>
+        </div>
+
+        <div class="param-divider"></div>
+
+        <!-- Tipe Coverage Visualization -->
+        <div class="control-group">
+          <label>Tipe Coverage</label>
+          <div class="viz-button-group">
+            <button id="visualizeRSRP" class="viz-btn-compact active">
+              <i class="fas fa-signal"></i> RSRP
+            </button>
+            <button id="visualizeSINR" class="viz-btn-compact">
+              <i class="fas fa-broadcast-tower"></i> SINR
+            </button>
+          </div>
+        </div>
+
+      </div><!-- /control-card propagasi -->
+
+      <!-- Parameter RF: 4 param utama, inline, no collapsible -->
+      <div class="control-card">
+        <div class="param-grid">
+          <div class="control-group">
+            <label>TX Power</label>
+            <div class="input-with-unit">
+              <input type="number" id="txPower" value="46" min="20" max="60" step="1">
+              <span class="unit-tag">dBm</span>
+            </div>
+          </div>
+          <div class="control-group">
+            <label>Frekuensi</label>
+            <div class="input-with-unit">
+              <input type="number" id="frequency" value="2300" min="700" max="28000" step="100">
+              <span class="unit-tag">MHz</span>
+            </div>
+          </div>
+          <div class="control-group">
+            <label>Bandwidth</label>
+            <div class="input-with-unit">
+              <input type="number" id="bandwidth" value="20" min="5" max="100" step="5">
+              <span class="unit-tag">MHz</span>
+            </div>
+          </div>
+          <div class="control-group">
+            <label>Tinggi UE</label>
+            <div class="input-with-unit">
+              <input type="number" id="mobileH" value="1.5" min="0.5" max="3" step="0.5">
+              <span class="unit-tag">m</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- hidden inputs agar getCAL() tetap bisa baca nilai statis -->
+        <input type="hidden" id="antennaAm"    value="15">
+        <input type="hidden" id="clutterRefM"  value="100">
+        <input type="hidden" id="clutterCoef"  value="3.5">
+        <input type="hidden" id="sinrGoodBase" value="20">
+        <input type="hidden" id="sinrGoodStd"  value="5.5">
+        <input type="hidden" id="sinrBadBase"  value="6">
+        <input type="hidden" id="sinrBadStd"   value="4.5">
+      </div>
+
+      <!-- ═══════════════════════════════════════════ -->
+      <!-- SECTION 4: PARAMETER SIMULASI              -->
+      <!-- ═══════════════════════════════════════════ -->
+      <div class="section-label">
+        <i class="fas fa-th"></i>
+        Parameter Simulasi
+      </div>
+
+      <div class="control-card">
+        <div class="param-grid">
+          <div class="control-group">
+            <label>Grid Size</label>
+            <select id="gridSize">
+              <option value="10">10 m</option>
+              <option value="25">25 m</option>
+              <option value="50" selected>50 m</option>
+              <option value="100">100 m</option>
+              <option value="150">150 m</option>
+            </select>
+            <small class="help-text">Resolusi grid simulasi</small>
+          </div>
+          <div class="control-group">
+            <label>Radius Coverage</label>
+            <div class="input-with-unit">
+              <input type="number" id="coverageRadius" value="500" min="100" max="2000" step="50">
+              <span class="unit-tag">m</span>
+            </div>
+            <small class="help-text">Batas radius analisis</small>
+          </div>
         </div>
       </div>
-    </div>
 
+      <!-- ═══════════════════════════════════════════ -->
+      <!-- SECTION 5: HASIL PREDIKSI                  -->
+      <!-- ═══════════════════════════════════════════ -->
+      <div class="section-label">
+        <i class="fas fa-chart-line"></i>
+        Hasil Prediksi Coverage
+      </div>
+
+      <div class="stats-card">
+        <div id="analysisResult" class="analysis-content">
+          <div class="waiting-state">
+            <i class="fas fa-hand-pointer"></i>
+            <p>Tentukan lokasi site untuk melihat prediksi coverage</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Statistik -->
+      <div class="detailed-stats">
+        <h3><i class="fas fa-chart-pie"></i> Statistik Coverage</h3>
+        <div class="stats-grid">
+          <div class="stat-box">
+            <label>Total Area</label>
+            <span id="totalArea">0 km²</span>
+          </div>
+          <div class="stat-box excellent">
+            <label>Excellent (S1)</label>
+            <span id="excellentCoverage">0%</span>
+          </div>
+          <div class="stat-box good">
+            <label>Good (S2)</label>
+            <span id="goodCoverage">0%</span>
+          </div>
+          <div class="stat-box poor">
+            <label>Poor / Bad</label>
+            <span id="poorCoverage">0%</span>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /panel-body -->
   </div><!-- /analysis-panel -->
+
 </div><!-- /newsite-container -->
 
 {% endblock %}

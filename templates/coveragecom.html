@@ -1,0 +1,178 @@
+{% extends "base_app.html" %}
+
+{% block title %}Komparasi Coverage — Drive Test vs Simulasi{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/coveragecom.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<!-- MAIN HEADER -->
+<header class="main-header">
+  <h1>ANALISIS PERBANDINGAN COVERAGE DRIVE TEST REAL VS SIMULASI</h1>
+</header>
+
+<!-- TOOLBAR -->
+<section class="comp-toolbar">
+
+  <button id="uploadDTBtn" class="btn btn-upload">
+    <i class="fas fa-file-upload"></i> Upload Drive Test CSV
+  </button>
+
+  <div class="sim-source-info">
+    <i class="fas fa-broadcast-tower"></i>
+    <span id="simSourceLabel">Belum ada simulasi — buka halaman Coverage lalu klik "Kirim ke Komparasi"</span>
+  </div>
+
+  <button id="processRSRPBtn" class="btn btn-process-rsrp" disabled>
+    <i class="fas fa-signal"></i> Proses RSRP
+  </button>
+
+  <button id="processSINRBtn" class="btn btn-process-sinr" disabled>
+    <i class="fas fa-chart-line"></i> Proses SINR
+  </button>
+
+  <div class="toolbar-status">
+    <span id="dtStatus"  class="status-badge">DT: —</span>
+    <span id="simStatus" class="status-badge">Sim: —</span>
+  </div>
+
+</section>
+
+<input type="file" id="dtFileInput" accept=".csv,.txt,.log" style="display:none;">
+
+<!-- ═══════════════ MAIN PAGE ═══════════════ -->
+<div class="comp-page">
+
+  <!-- ── MAPS ROW ── -->
+  <div class="maps-row">
+
+    <!-- PETA KIRI — Drive Test Real -->
+    <div class="map-card">
+      <div class="map-card-header dt-hdr">
+        <div class="map-card-title-wrap">
+          <span class="map-card-badge">
+            <i class="fas fa-route"></i> Drive Test Real
+          </span>
+          <span class="map-card-sub">Coverage dari titik GPS aktual (Gaussian RBF)</span>
+        </div>
+        <span class="map-card-count" id="dtPointCount">0 titik</span>
+      </div>
+      <div id="dtMap" class="map-div">
+        <div id="dtMapPlaceholder" class="map-placeholder">
+          <i class="fas fa-file-upload"></i>
+          <p>Upload CSV Drive Test<br>untuk menampilkan coverage</p>
+        </div>
+      </div>
+      <div id="dtLegend" class="map-legend">
+        <h4 id="dtLegendTitle">RSRP (dBm)</h4>
+        <table>
+          <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
+          <tbody id="dtLegendBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Divider — thin gap only, no circle -->
+    <div class="maps-divider"></div>
+
+    <!-- PETA KANAN — Simulasi Coverage -->
+    <div class="map-card">
+      <div class="map-card-header sim-hdr">
+        <div class="map-card-title-wrap">
+          <span class="map-card-badge">
+            <i class="fas fa-broadcast-tower"></i> Simulasi Coverage
+          </span>
+          <span class="map-card-sub" id="simSiteLabel">Dari halaman Coverage</span>
+        </div>
+        <span class="map-card-count" id="simCellCount">0 grid</span>
+      </div>
+      <div id="simMap" class="map-div">
+        <div id="simMapPlaceholder" class="map-placeholder">
+          <i class="fas fa-broadcast-tower"></i>
+          <p>Buka halaman Coverage → pilih site<br>→ klik <b>"Kirim ke Komparasi"</b></p>
+        </div>
+      </div>
+      <div id="simLegend" class="map-legend">
+        <h4 id="simLegendTitle">RSRP (dBm)</h4>
+        <table>
+          <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
+          <tbody id="simLegendBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /maps-row -->
+
+  <!-- ── BOTTOM ROW ── -->
+  <div class="bottom-row">
+
+    <!-- Info Panel -->
+    <div class="panel info-panel">
+      <h3 class="panel-title"><i class="fas fa-info-circle"></i> Info Data</h3>
+      <div id="infoContent">
+        <div class="waiting-notice">
+          <i class="fas fa-satellite-dish"></i>
+          Upload DT CSV dan kirim<br>data simulasi dari halaman Coverage
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparison Panel -->
+    <div class="panel comp-panel">
+      <h3 class="panel-title" id="compTableTitle">
+        <i class="fas fa-balance-scale"></i> Perbandingan Distribusi
+      </h3>
+      <div class="comp-table-wrap">
+        <table class="comp-table">
+          <colgroup>
+            <col style="width:30%"><col style="width:16%"><col style="width:16%">
+            <col style="width:14%"><col style="width:14%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>KATEGORI</th>
+              <th style="text-align:center">DT REAL (%)</th>
+              <th style="text-align:center">SIMULASI (%)</th>
+              <th style="text-align:center">Δ (pp)</th>
+              <th style="text-align:center">STATUS</th>
+            </tr>
+          </thead>
+          <tbody id="compTableBody">
+            <tr><td colspan="5" class="td-empty">
+              Upload DT CSV + kirim simulasi, lalu klik "Proses RSRP" atau "Proses SINR"
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /bottom-row -->
+
+  <!-- ── OVERALL ANALYSIS ── -->
+  <div class="analysis-panel">
+    <h3 class="panel-title"><i class="fas fa-chart-bar"></i> Analisis Validasi Coverage</h3>
+    <div class="analysis-body">
+      <div id="overallAnalysisContent">
+        <div class="waiting-notice">
+          <i class="fas fa-satellite-dish"></i>
+          Langkah:
+          <strong>1)</strong> Upload CSV Drive Test &nbsp;→&nbsp;
+          <strong>2)</strong> Di halaman Coverage, pilih site dan klik "Kirim ke Komparasi" &nbsp;→&nbsp;
+          <strong>3)</strong> Klik "Proses RSRP" atau "Proses SINR"
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /comp-page -->
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+<script src="{{ url_for('static', filename='js/coverage_validation.js') }}"></script>
+{% endblock %}

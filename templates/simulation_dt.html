@@ -10,7 +10,7 @@
 
 <header class="main-header">
   <h1>SIMULASI BERBASIS RUTE DRIVE TEST AKTUAL</h1>
-  <div class="header-badge">Hybrid Model v12</div>
+  <div class="header-badge">Hybrid Model v14 + PCI Match</div>
 </header>
 
 <section class="simulation-toolbar">
@@ -19,6 +19,13 @@
     <input type="file" id="dtCsvInput" accept=".csv,.txt,.gen" style="display:none;">
   </label>
   <div class="toolbar-divider"></div>
+
+  <!-- Mode toggle RSRP / PCI -->
+  <div class="mode-toggle-group">
+    <button id="btnModeRSRP" class="btn-mode active" onclick="setDtDisplayMode('rsrp')">📶 RSRP/SINR</button>
+    <button id="btnModePCI"  class="btn-mode"        onclick="setDtDisplayMode('pci')">🎨 PCI</button>
+  </div>
+
   <button id="btnRunSimulation" class="btn-toolbar btn-run" disabled>▶ Jalankan Simulasi</button>
   <div style="margin-left:auto;display:flex;gap:8px;">
     <button id="btnDebugSite"  class="btn-toolbar btn-debug">🔍 Debug</button>
@@ -27,37 +34,71 @@
   </div>
 </section>
 
-<div class="simulation-container">
+<div class="dt-page-wrapper">
 
-  <div class="simulation-map-wrapper">
-    <div id="dtLegend" class="rsrp-legend" style="display:none;">
-      <h4>RSRP Simulasi (dBm)</h4>
-      <table>
-        <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
-        <tbody id="dtLegendBody"></tbody>
-      </table>
+  <!-- Kolom kiri: peta + tabel -->
+  <div class="dt-left-col">
+
+    <div class="simulation-map-wrapper">
+      <!-- Legend RSRP overlay -->
+      <div id="dtLegend" class="rsrp-legend" style="display:none;">
+        <h4>RSRP Simulasi (dBm)</h4>
+        <table>
+          <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
+          <tbody id="dtLegendBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Legend PCI overlay -->
+      <div id="pciLegend" class="pci-legend" style="display:none;">
+        <h4>NR PCC Serving PCI</h4>
+        <div id="pciLegendBody"></div>
+      </div>
+
+      <!-- Map guide -->
+      <div id="mapGuide" class="map-guide-overlay">
+        <div class="map-guide-inner">
+          <div class="map-guide-icon">🔬</div>
+          <h3>Hybrid Simulation + PCI Matching</h3>
+          <p>
+            Gabungkan <strong>formula 3GPP TR 38.901</strong> dengan
+            <strong>kalibrasi empiris</strong> dari data aktual.<br><br>
+            PCI dari CSV DT akan dicocokkan dengan data shapefile untuk
+            visualisasi coverage per sektor.
+          </p>
+          <div class="map-guide-steps">
+            <div class="step-pill"><span class="pill-num">1</span> Site dari sesi</div>
+            <div class="step-pill"><span class="pill-num">2</span> Upload CSV DT</div>
+            <div class="step-pill"><span class="pill-num">3</span> Auto-kalibrasi</div>
+            <div class="step-pill"><span class="pill-num">4</span> PCI Match &amp; Sim</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="map-dt-sim"></div>
     </div>
-    <div id="mapGuide" class="map-guide-overlay">
-      <div class="map-guide-inner">
-        <div class="map-guide-icon">🔬</div>
-        <h3>Hybrid Simulation Model</h3>
-        <p>
-          Menggabungkan <strong>formula 3GPP TR 38.901</strong> dengan
-          <strong>kalibrasi empiris</strong> dari data aktual.<br><br>
-          Jarak dihitung otomatis dari koordinat GPS — tidak perlu kolom distance di CSV.<br>
-          Bias koreksi = rata-rata selisih RSRP aktual vs 3GPP, difit per-site.
-        </p>
-        <div class="map-guide-steps">
-          <div class="step-pill"><span class="pill-num">1</span> Site dari sesi</div>
-          <div class="step-pill"><span class="pill-num">2</span> Upload CSV DT</div>
-          <div class="step-pill"><span class="pill-num">3</span> Auto-kalibrasi bias</div>
-          <div class="step-pill"><span class="pill-num">4</span> Simulasi &amp; Export</div>
+
+    <!-- Tabel NR Serving & Neighbor Cells — fix di bawah peta -->
+    <div class="cell-info-panel" id="dtCellInfoPanel">
+      <div class="cell-panel-header">
+        <span id="dtCellPanelTitle">
+          📡 NR Serving and Neighbor Cells
+          <span class="cell-panel-hint">— Klik titik simulasi di peta untuk detail</span>
+        </span>
+        <div class="cell-legend-pills" id="dtCellLegendPills">
+          <!-- diisi JS -->
+        </div>
+      </div>
+      <div class="cell-table-wrapper" id="dtCellTableWrapper">
+        <div class="cell-empty-state">
+          Belum ada titik dipilih — klik titik berwarna di peta untuk melihat detail sel
         </div>
       </div>
     </div>
-    <div id="map-dt-sim"></div>
-  </div>
 
+  </div><!-- /dt-left-col -->
+
+  <!-- Kolom kanan: info panel -->
   <aside class="simulation-info">
 
     <div class="info-box">
@@ -81,9 +122,10 @@
         <tr><td>Panjang rute:</td>         <td><b id="infoRouteDist">—</b></td></tr>
         <tr><td>RSRP aktual:</td>          <td><b id="infoHasRSRP">—</b></td></tr>
         <tr><td>SINR aktual:</td>          <td><b id="infoHasSINR">—</b></td></tr>
+        <tr><td>PCI aktual:</td>           <td><b id="infoHasPCI">—</b></td></tr>
       </table>
       <div class="note-inline" style="margin-top:8px;">
-        💡 Kolom Distance tidak diperlukan — jarak dihitung otomatis dari lat/lng ke koordinat site.
+        💡 Jarak dihitung otomatis dari lat/lng ke koordinat site.
       </div>
     </div>
 
@@ -109,11 +151,9 @@
         <tr><td>Residual σ:</td>        <td><b id="infoCalibStd">—</b></td></tr>
         <tr><td>RMSE before→after:</td> <td><b id="infoCalibRmse">—</b></td></tr>
         <tr><td>R² SINR model:</td>     <td><b id="infoSinrR2">—</b></td></tr>
+        <tr><td>Global Gain G:</td>     <td><b id="infoGlobalGain">—</b></td></tr>
+        <tr><td>PCI matched:</td>       <td><b id="infoPCIMatched">—</b></td></tr>
       </table>
-      <div class="note-inline" style="margin-top:8px;">
-        Metode: <code>RSRP_sim = RSRP_3GPP + bias + N(0,σ)</code><br>
-        <code>SINR_sim = a·RSRP_sim + b + N(0,σ_sinr)</code>
-      </div>
     </div>
 
     <div class="info-box">
@@ -123,9 +163,8 @@
         <tr><td>Tx Power:</td>        <td><b>46 dBm</b></td></tr>
         <tr><td>Mobile Height:</td>   <td><b>1.5 m</b></td></tr>
         <tr><td>Path Loss:</td>       <td><b>3GPP TR 38.901</b></td></tr>
-        <tr><td>Bias:</td>            <td><b>Empiris dari data aktual</b></td></tr>
-        <tr><td>Distance:</td>        <td><b>Dihitung dari lat/lng</b></td></tr>
-        <tr><td>LTE/idle rows:</td>   <td><b>Dilewati otomatis</b></td></tr>
+        <tr><td>Bias:</td>            <td><b>Empiris dari CSV aktual</b></td></tr>
+        <tr><td>Seed:</td>            <td><b id="infoSeedValue">Hash dari data</b></td></tr>
       </table>
     </div>
 
@@ -145,8 +184,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="{{ url_for('static', filename='js/dtsimulation.js') }}"></script>
 <script>
-  document.getElementById('dtCsvInput')?.addEventListener('change',()=>{
-    const g=document.getElementById('mapGuide');if(g)g.style.display='none';
+  document.getElementById('dtCsvInput')?.addEventListener('change', () => {
+    const g = document.getElementById('mapGuide');
+    if (g) g.style.display = 'none';
   });
 </script>
 {% endblock %}

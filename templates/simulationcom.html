@@ -1,0 +1,192 @@
+{% extends "base_app.html" %}
+
+{% block title %}Analisis Perbandingan Drive Test vs Simulasi{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/coveragecom.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<!-- MAIN HEADER -->
+<header class="main-header">
+  <h1>ANALISIS PERBANDINGAN DRIVE TEST VS SIMULASI</h1>
+</header>
+
+<!-- TOOLBAR -->
+<section class="comp-toolbar">
+
+  <button id="uploadDTBtn" class="btn btn-upload">
+    <i class="fas fa-file-upload"></i> Upload Drive Test
+  </button>
+
+  <button id="uploadSimBtn" class="btn btn-upload">
+    <i class="fas fa-upload"></i> Upload Simulasi
+  </button>
+
+  <button id="processRSRPBtn" class="btn btn-process-rsrp" disabled>
+    <i class="fas fa-signal"></i> Proses RSRP
+  </button>
+
+  <button id="processSINRBtn" class="btn btn-process-sinr" disabled>
+    <i class="fas fa-chart-line"></i> Proses SINR
+  </button>
+
+  <div class="toolbar-status">
+    <span id="dtStatus"  class="status-badge">DT: —</span>
+    <span id="simStatus" class="status-badge">Sim: —</span>
+  </div>
+
+</section>
+
+<input type="file" id="dtFileInput"  accept=".csv,.txt,.log"  style="display:none;">
+<input type="file" id="simFileInput" accept=".csv,.txt,.xlsx" style="display:none;">
+
+<!-- ═══════════════ MAIN PAGE ═══════════════ -->
+<div class="comp-page">
+
+  <!-- ── MAPS ROW ── -->
+  <div class="maps-row">
+
+    <!-- PETA KIRI — Drive Test Real -->
+    <div class="map-card">
+      <div class="map-card-header dt-hdr">
+        <div class="map-card-title-wrap">
+          <span class="map-card-badge">
+            <i class="fas fa-route"></i> Drive Test Real
+          </span>
+          <span class="map-card-sub">Data lapangan dari logfile</span>
+        </div>
+        <div class="map-metric-select">
+          <label>Metric:</label>
+          <select id="dtMetric">
+            <option value="rsrp">RSRP</option>
+            <option value="sinr">SINR</option>
+          </select>
+        </div>
+        <span class="map-card-count" id="dtPointCount">0 titik</span>
+      </div>
+      <div id="dtMap" class="map-div">
+        <div id="dtMapPlaceholder" class="map-placeholder">
+          <i class="fas fa-file-upload"></i>
+          <p>Upload file Drive Test<br>untuk menampilkan data</p>
+        </div>
+      </div>
+      <div id="dtLegend" class="map-legend">
+        <h4 id="dtLegendTitle">RSRP (dBm)</h4>
+        <table>
+          <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
+          <tbody id="dtLegendBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Divider — thin gap only, no circle -->
+    <div class="maps-divider"></div>
+
+    <!-- PETA KANAN — Hasil Simulasi -->
+    <div class="map-card">
+      <div class="map-card-header sim-hdr">
+        <div class="map-card-title-wrap">
+          <span class="map-card-badge">
+            <i class="fas fa-broadcast-tower"></i> Hasil Simulasi
+          </span>
+          <span class="map-card-sub">Data dari file simulasi</span>
+        </div>
+        <div class="map-metric-select">
+          <label>Metric:</label>
+          <select id="simMetric">
+            <option value="rsrp">RSRP</option>
+            <option value="sinr">SINR</option>
+          </select>
+        </div>
+        <span class="map-card-count" id="simCellCount">0 titik</span>
+      </div>
+      <div id="simMap" class="map-div">
+        <div id="simMapPlaceholder" class="map-placeholder">
+          <i class="fas fa-upload"></i>
+          <p>Upload file Simulasi<br>untuk menampilkan data</p>
+        </div>
+      </div>
+      <div id="simLegend" class="map-legend">
+        <h4 id="simLegendTitle">RSRP (dBm)</h4>
+        <table>
+          <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
+          <tbody id="simLegendBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /maps-row -->
+
+  <!-- ── BOTTOM ROW ── -->
+  <div class="bottom-row">
+
+    <!-- Info Panel -->
+    <div class="panel info-panel">
+      <h3 class="panel-title"><i class="fas fa-info-circle"></i> Info Data</h3>
+      <div id="infoContent">
+        <div class="waiting-notice">
+          <i class="fas fa-file-import"></i>
+          Upload file Drive Test<br>dan file Simulasi untuk memulai
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparison Panel -->
+    <div class="panel comp-panel">
+      <h3 class="panel-title" id="compTableTitle">
+        <i class="fas fa-balance-scale"></i> Perbandingan Distribusi
+      </h3>
+      <div class="comp-table-wrap">
+        <table class="comp-table">
+          <colgroup>
+            <col style="width:26%"><col style="width:14%"><col style="width:14%">
+            <col style="width:12%"><col style="width:13%"><col style="width:21%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>KATEGORI</th>
+              <th style="text-align:center">DT REAL (%)</th>
+              <th style="text-align:center">SIMULASI (%)</th>
+              <th style="text-align:center">Δ (pp)</th>
+              <th style="text-align:center">STATUS</th>
+              <th>ANALISIS</th>
+            </tr>
+          </thead>
+          <tbody id="compTableBody">
+            <tr><td colspan="6" class="td-empty">
+              Upload kedua file, lalu klik "Proses RSRP" atau "Proses SINR"
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /bottom-row -->
+
+  <!-- ── OVERALL ANALYSIS ── -->
+  <div class="analysis-panel">
+    <h3 class="panel-title"><i class="fas fa-chart-bar"></i> Analisis Validasi Coverage</h3>
+    <div class="analysis-body">
+      <div id="overallAnalysisContent">
+        <div class="waiting-notice">
+          <i class="fas fa-file-import"></i>
+          Upload data Drive Test dan Simulasi,<br>
+          lalu klik "Proses RSRP" atau "Proses SINR" untuk melihat hasil analisis
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /comp-page -->
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="{{ url_for('static', filename='js/simulationcom.js') }}"></script>
+{% endblock %}

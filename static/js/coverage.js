@@ -332,6 +332,7 @@ function showClearBtn(show) { const b = document.getElementById('btnClearSite');
 function attachEventListeners() {
   document.getElementById('loadShapefileBtn')?.addEventListener('click', () => document.getElementById('shapefileInput').click());
   document.getElementById('shapefileInput')?.addEventListener('change', processXLSX);
+  document.getElementById('sendToCompareBtn')?.addEventListener('click', sendCoverageToCompare);
 
   document.getElementById('btnClearSite')?.addEventListener('click', () => {
     if (!confirm('Hapus data site yang tersimpan?')) return;
@@ -571,6 +572,9 @@ function generateCoverage() {
       const grids = calculateMultiSiteCoverage(allSites, gridSize, radius, antennaHeight, currentCoverageType);
       displayCoverageGrid(grids, currentCoverageType);
 
+      window._lastCoverageGrids = grids;
+      showSendToCompareBtn();
+
       const gapClusters = detectGaps(grids, allSites, gridSize);
       renderGapLayer(gapClusters, allSites);
 
@@ -658,6 +662,7 @@ function calculateMultiSiteCoverage(allSites, gridSize, radius, antennaHeight, t
         scenario: best.scenario || 'uma',
         condition: best.condition || 'nlos',
         rsrpValue: best.rsrp,
+        sinrValue: Math.round(computeSINR_proper(best.rsrp, interfRSRPs) * 10) / 10,
         allRSRPs: siteRSRPs.map(s => ({ id: s.id, rsrp: Math.round(s.rsrp * 10) / 10 })),
         bounds: [[lat, lon], [lat + dLat, lon], [lat + dLat, lon + dLon], [lat, lon + dLon]]
       });
@@ -1244,5 +1249,110 @@ function updateLoadingProgress(p, text) {
 }
 
 function hideLoading() { document.getElementById('loadingOverlay')?.remove(); }
+
+// ── KEY SESSION ──────────────────────────────────
+const CV_SESSION_KEY = 'coverageExportData';
+const CV_PAGE        = '/coveragecom';   // sesuaikan dengan route Flask Anda
+ 
+// ── Tampilkan tombol setelah coverage di-generate ──
+function showSendToCompareBtn() {
+  const btn = document.getElementById('sendToCompareBtn');
+  if (btn) btn.style.display = 'inline-flex';
+}
+ 
+// ── Export grid ke sessionStorage lalu redirect ──
+function sendCoverageToCompare() {
+  if (!selectedSite || !siteIndex[selectedSite]) {
+    alert('Pilih site dan generate coverage terlebih dahulu.'); return;
+  }
+ 
+  // Ambil grid dari coverageLayer
+  // coverageLayer adalah L.layerGroup — kita re-generate data mentahnya
+  // agar tidak bergantung pada DOM Leaflet
+ 
+  // Re-collect data grid terakhir yang di-generate
+  // Kita perlu menyimpan grids[] saat generateCoverage() dipanggil
+  // Gunakan window._lastCoverageGrids yang kita set di generateCoverage()
+  const grids = window._lastCoverageGrids;
+  if (!grids || !grids.length) {
+    alert('Generate coverage terlebih dahulu sebelum mengirim ke Komparasi.'); return;
+  }
+ 
+  const site       = siteIndex[selectedSite];
+  const gridSize   = parseInt(document.getElementById('gridSize').value);
+  const radius     = parseInt(document.getElementById('coverageRadius').value);
+  const neighbours = getNeighbourSites(selectedSite).map(n => n.id);
+ 
+  // Struktur payload yang dibaca coverage_validation.js
+  const payload = {
+    siteId:     selectedSite,
+    metric:     currentCoverageType,   // 'rsrp' | 'sinr'
+    gridSize,
+    radius,
+    neighbours,
+    siteLat:    site.lat,
+    siteLng:    site.lng,
+    siteHeight: site.height,
+    scenario:   site.scenario || 'uma',
+    condition:  site.condition || 'nlos',
+    timestamp:  new Date().toISOString(),
+ 
+    // Grid data — simpan field yang diperlukan
+    // rsrpValue selalu disimpan, sinrValue juga jika tersedia
+    grids: grids.map(g => ({
+      lat:          g.lat,
+      lon:          g.lon,
+      bounds:       g.bounds,           // [[lat,lon],[lat+dLat,lon],[lat+dLat,lon+dLon],[lat,lon+dLon]]
+      rsrpValue:    g.rsrpValue,         // nilai RSRP mentah (selalu ada)
+      sinrValue:    g.sinrValue ?? null, // nilai SINR jika ada
+      value:        g.value,            // nilai sesuai metric saat generate
+      color:        g.color,
+      category:     g.category,
+      servingSiteId: g.servingSiteId,
+      isMain:       g.isMain,
+      dist:         g.dist,
+    })),
+  };
+ 
+  // Estimasi ukuran payload
+  const payloadStr = JSON.stringify(payload);
+  const sizeMB     = (new Blob([payloadStr]).size / 1024 / 1024).toFixed(2);
+ 
+  if (parseFloat(sizeMB) > 4.5) {
+    // Payload terlalu besar untuk sessionStorage (limit ~5MB)
+    // Subsample: simpan 1 dari setiap 2 grid
+    const subsampled = grids.filter((_, i) => i % 2 === 0);
+    payload.grids = subsampled.map(g => ({
+      lat: g.lat, lon: g.lon, bounds: g.bounds,
+      rsrpValue: g.rsrpValue, sinrValue: g.sinrValue ?? null,
+      value: g.value, color: g.color, category: g.category,
+      servingSiteId: g.servingSiteId, isMain: g.isMain, dist: g.dist,
+    }));
+    payload._subsampled = true;
+    console.warn(`[Export] Payload terlalu besar (${sizeMB}MB), subsample ke ${payload.grids.length} grid`);
+  }
+ 
+  try {
+    sessionStorage.setItem(CV_SESSION_KEY, JSON.stringify(payload));
+    console.log(`[Export] ${payload.grids.length} grid → sessionStorage, lalu redirect ke ${CV_PAGE}`);
+    window.location.href = CV_PAGE;
+  } catch (e) {
+    // sessionStorage penuh — coba subsample lebih agresif
+    const sub2 = grids.filter((_, i) => i % 4 === 0);
+    payload.grids = sub2.map(g => ({
+      lat: g.lat, lon: g.lon, bounds: g.bounds,
+      rsrpValue: g.rsrpValue, sinrValue: g.sinrValue ?? null,
+      value: g.value, color: g.color, category: g.category,
+      servingSiteId: g.servingSiteId, isMain: g.isMain, dist: g.dist,
+    }));
+    payload._subsampled = true;
+    try {
+      sessionStorage.setItem(CV_SESSION_KEY, JSON.stringify(payload));
+      window.location.href = CV_PAGE;
+    } catch (e2) {
+      alert('Data terlalu besar untuk dikirim. Coba kurangi radius atau perbesar grid size.');
+    }
+  }
+}
 
 console.log('Coverage.js v6 — Blank Spot scoped to main site radius + cluster ownership check loaded.');

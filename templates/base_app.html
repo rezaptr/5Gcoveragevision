@@ -52,7 +52,7 @@
                 <span class="text">Perencanaan Site Baru</span>
             </a>
 
-            <span class="sidebar-section-label">Simulasi & Analisis</span>
+            <span class="sidebar-section-label">Simulasi</span>
 
             <a href="{{ url_for('drivetest') }}" class="sidebar-link {% if request.endpoint == 'drivetest' %}active{% endif %}">
                 <span class="icon">📡</span>
@@ -69,9 +69,16 @@
                 <span class="text">Simulasi Coverage</span>
             </a>
 
+            <span class="sidebar-section-label">Analisis</span>
+
             <a href="{{ url_for('analysis') }}" class="sidebar-link {% if request.endpoint == 'analysis' %}active{% endif %}">
                 <span class="icon">📊</span>
-                <span class="text">Analisis Perbandingan</span>
+                <span class="text">Analisis Perbandingan Drive Test</span>
+            </a>
+
+            <a href="{{ url_for('coveragecom') }}" class="sidebar-link {% if request.endpoint == 'coveragecom' %}active{% endif %}">
+                <span class="icon">📊</span>
+                <span class="text">Analisis Perbandingan Coverage</span>
             </a>
 
             <a href="{{ url_for('evaluation') }}" class="sidebar-link {% if request.endpoint == 'evaluation' %}active{% endif %}">

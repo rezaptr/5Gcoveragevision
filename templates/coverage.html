@@ -41,6 +41,11 @@
     <i class="fas fa-building"></i> <span id="buildingBtnText">Show Buildings</span>
   </button>
 
+  <button id="sendToCompareBtn" class="toolbar-btn btn-compare" style="display:none;"
+    title="Kirim hasil coverage ke halaman Komparasi">
+    <i class="fas fa-paper-plane"></i> Kirim ke Komparasi
+  </button>
+
 </section>
 
 <!-- MAIN CONTENT AREA -->
@@ -155,6 +160,7 @@
 
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.osmbuildings.org/OSMBuildings-Leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
 <script src="{{ url_for('static', filename='js/coverage.js') }}"></script>
 {% endblock %}
