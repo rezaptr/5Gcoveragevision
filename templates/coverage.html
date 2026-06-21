@@ -1,5 +1,4 @@
 {% extends "base_app.html" %}
-
 {% block title %}Visualisasi Coverage 5G - RSRP dan SINR{% endblock %}
 
 {% block extra_css %}
@@ -11,151 +10,238 @@
 {% endblock %}
 
 {% block content %}
-<!-- MAIN HEADER -->
 <header class="main-header">
-  <h1>VISUALISASI COVERAGE JARINGAN 5G - RSRP DAN SINR</h1>
+  <h1>VISUALISASI COVERAGE JARINGAN 5G — RSRP DAN SINR</h1>
 </header>
 
-<!-- TOOLBAR -->
 <section class="coverage-toolbar">
-
-  <!-- Source badge + tombol upload manual + ganti file -->
   <div class="source-group">
     <span id="sourceBadge" class="source-badge">⏳ Memuat data...</span>
-    <button id="loadShapefileBtn" class="toolbar-btn-secondary" title="Upload XLSX baru (akan menggantikan data tersimpan)">
+    <button id="loadShapefileBtn" class="toolbar-btn-secondary">
       <i class="fas fa-file-upload"></i> Upload XLSX
     </button>
-    <button id="btnClearSite" class="btn-clear-site" title="Hapus data site & upload ulang" style="display:none;">
-      ✕ Ganti File
-    </button>
+    <button id="btnClearSite" class="btn-clear-site" style="display:none;">✕ Ganti File</button>
   </div>
-
-  <input list="siteList" id="siteSearch" class="site-search" placeholder="Search Site ID">
+  <input list="siteList" id="siteSearch" class="site-search" placeholder="Cari Site ID...">
   <datalist id="siteList"></datalist>
-
-  <button id="searchSiteBtn" class="toolbar-btn">
-    <i class="fas fa-search"></i> Search Site
-  </button>
-
+  <button id="searchSiteBtn" class="toolbar-btn"><i class="fas fa-search"></i> Search</button>
   <button id="toggleBuildingBtn" class="toolbar-btn">
     <i class="fas fa-building"></i> <span id="buildingBtnText">Show Buildings</span>
   </button>
-
-  <button id="sendToCompareBtn" class="toolbar-btn btn-compare" style="display:none;"
-    title="Kirim hasil coverage ke halaman Komparasi">
-    <i class="fas fa-paper-plane"></i> Kirim ke Komparasi
-  </button>
-
 </section>
 
-<!-- MAIN CONTENT AREA -->
 <div class="coverage-container">
 
-  <!-- LEFT PANEL - MAP -->
+  <!-- MAP -->
   <div class="map-panel">
     <div id="coverageMap"></div>
-
-    <!-- LEGEND ON MAP -->
-    <div id="mapLegend" class="map-legend" style="display: none;">
+    <div id="gapBadge" class="gap-badge" style="display:none;"></div>
+    <button id="toggleGapBtn" class="toggle-gap-btn">🙈 Sembunyikan Gap</button>
+    <div id="neighbourBadge" class="neighbour-badge" style="display:none;"></div>
+    <div id="mapLegend" class="map-legend" style="display:none;">
       <h4 id="legendTitle">RSRP (dBm)</h4>
       <table>
-        <thead>
-          <tr>
-            <th></th>
-            <th>Rentang</th>
-            <th>%</th>
-          </tr>
-        </thead>
-        <tbody id="legendTableBody">
-        </tbody>
+        <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
+        <tbody id="legendTableBody"></tbody>
       </table>
     </div>
   </div>
 
-  <!-- RIGHT PANEL - ANALYSIS RESULTS -->
+  <!-- PANEL KANAN -->
   <div class="analysis-panel">
-    <h2>Parameter & Hasil Analisis</h2>
+    <h2 class="panel-heading">Parameter &amp; Hasil Analisis</h2>
 
-    <!-- CONTROL PARAMETERS -->
-    <div class="control-card">
-      <h3><i class="fas fa-sliders-h"></i> Parameter Coverage</h3>
-
-      <div class="control-group">
-        <label>Tipe Coverage:</label>
-        <div class="viz-button-group">
-          <button id="visualizeRSRP" class="viz-btn-compact active">
-            <i class="fas fa-signal"></i> RSRP
-          </button>
-          <button id="visualizeSINR" class="viz-btn-compact">
-            <i class="fas fa-broadcast-tower"></i> SINR
-          </button>
-        </div>
-      </div>
-
-      <div class="control-group">
-        <label>Grid Size (meter):</label>
-        <select id="gridSize">
-          <option value="10">10m</option>
-          <option value="25">25m</option>
-          <option value="50" selected>50m</option>
-          <option value="100">100m</option>
-          <option value="150">150m</option>
-        </select>
-      </div>
-
-      <div class="control-group">
-        <label>Radius Coverage (meter):</label>
-        <input type="number" id="coverageRadius" value="500" min="100" max="2000" step="50">
-      </div>
-
-      <div class="control-group">
-        <label>Tinggi Antena (meter):</label>
-        <div class="height-control">
-          <input type="number" id="antennaHeight" value="30" min="10" max="100" step="5">
-          <span class="height-badge" id="heightBadge">Default</span>
-        </div>
-        <small class="help-text">📊 Ubah tinggi untuk melihat pengaruhnya terhadap coverage</small>
+    <!-- BLOK 1: TAMPILAN -->
+    <div class="panel-card">
+      <div class="panel-card-title"><i class="fas fa-eye"></i> Tampilan</div>
+      <div class="viz-button-group">
+        <button id="visualizeRSRP" class="viz-btn active">
+          <i class="fas fa-signal"></i> RSRP
+        </button>
+        <button id="visualizeSINR" class="viz-btn">
+          <i class="fas fa-broadcast-tower"></i> SINR
+        </button>
       </div>
     </div>
 
-    <!-- COVERAGE ANALYSIS RESULTS -->
-    <div class="stats-card">
-      <h3><i class="fas fa-chart-line"></i> Hasil Analisis Coverage</h3>
+    <!-- BLOK 2: PARAMETER SIMULASI -->
+    <div class="panel-card">
+      <div class="panel-card-title"><i class="fas fa-th"></i> Parameter Simulasi</div>
+
+      <div class="field-row">
+        <div class="field-col">
+          <label class="field-label">Grid Size</label>
+          <select id="gridSize" class="field-control">
+            <option value="10">10 m</option>
+            <option value="25">25 m</option>
+            <option value="50" selected>50 m</option>
+            <option value="100">100 m</option>
+            <option value="150">150 m</option>
+          </select>
+        </div>
+        <div class="field-col">
+          <label class="field-label">Radius Coverage</label>
+          <div class="input-suffix-wrap">
+            <input type="number" id="coverageRadius" class="field-control"
+                   value="500" min="100" max="2000" step="50">
+            <span class="input-suffix">m</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field-col">
+          <label class="field-label">
+            Tinggi Antena
+            <span class="height-badge-inline" id="heightBadge">Default</span>
+          </label>
+          <div class="input-suffix-wrap">
+            <input type="number" id="antennaHeight" class="field-control"
+                   value="30" min="10" max="150" step="1">
+            <span class="input-suffix">m</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BLOK 3: PARAMETER RF -->
+    <div class="panel-card">
+      <div class="panel-card-title">
+        <span><i class="fas fa-sliders-h"></i> Parameter RF</span>
+        <button id="btnToggleRF" class="btn-collapse" title="Tampilkan / sembunyikan">
+          <span id="rfToggleIcon">▶</span>
+        </button>
+      </div>
+
+      <!-- Badge ringkasan — selalu terlihat -->
+      <div class="rf-badge-row">
+        <span class="rf-badge-pill" id="badgeModel">UMA NLOS</span>
+        <span class="rf-badge-pill" id="badgeClutter">urban · 5 dB</span>
+        <span class="rf-badge-pill" id="badgeFreqBW">2300 / 30 MHz</span>
+        <span class="rf-badge-pill" id="badgeTxPower">46 dBm</span>
+      </div>
+
+      <!-- Input RF — tersembunyi default, muncul saat toggle -->
+      <div id="rfPanelBody" class="rf-panel-body" style="display:none;">
+
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">TX Power</label>
+            <select id="rf_txpower" class="field-control">
+              <option value="43">43 dBm</option>
+              <option value="46" selected>46 dBm</option>
+              <option value="49">49 dBm</option>
+            </select>
+          </div>
+          <div class="field-col">
+            <label class="field-label">Frekuensi</label>
+            <select id="rf_frequency" class="field-control">
+              <option value="700">700 MHz</option>
+              <option value="2100">2100 MHz</option>
+              <option value="2300" selected>2300 MHz</option>
+              <option value="2600">2600 MHz</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">Bandwidth</label>
+            <select id="rf_bandwidth" class="field-control">
+              <option value="5">5 MHz</option>
+              <option value="10">10 MHz</option>
+              <option value="15">15 MHz</option>
+              <option value="20">20 MHz</option>
+              <option value="25">25 MHz</option>
+              <option value="30" selected>30 MHz</option>
+              <option value="40">40 MHz</option>
+              <option value="50">50 MHz</option>
+              <option value="60">60 MHz</option>
+              <option value="80">80 MHz</option>
+              <option value="90">90 MHz</option>
+              <option value="100">100 MHz</option>
+            </select>
+          </div>
+          <div class="field-col">
+            <label class="field-label">Scenario</label>
+            <select id="rf_scenario" class="field-control">
+              <option value="uma" selected>UMa — Macro</option>
+              <option value="umi">UMi — Micro</option>
+              <option value="rma">RMa — Rural</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">Condition</label>
+            <select id="rf_condition" class="field-control">
+              <option value="nlos" selected>NLOS</option>
+              <option value="los">LOS</option>
+            </select>
+          </div>
+          <div class="field-col">
+            <label class="field-label">Clutter</label>
+            <select id="rf_clutter" class="field-control">
+              <option value="dense_urban">Dense Urban (8 dB)</option>
+              <option value="metropolitan">Metropolitan (8 dB)</option>
+              <option value="urban" selected>Urban (5 dB)</option>
+              <option value="suburban">Suburban (2.5 dB)</option>
+              <option value="sub_urban">Sub Urban (2.5 dB)</option>
+              <option value="industrial">Industrial (6 dB)</option>
+              <option value="forest">Forest (9 dB)</option>
+              <option value="highway">Highway (−1.5 dB)</option>
+              <option value="water">Water (−1 dB)</option>
+              <option value="rural">Rural (0.5 dB)</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="rf-note">
+          Default diisi otomatis dari shapefile saat site dipilih.<br>
+          Ubah nilai dropdown → coverage diperbarui otomatis.
+        </p>
+      </div>
+    </div>
+
+    <!-- BLOK 4: HASIL ANALISIS -->
+    <div class="panel-card">
+      <div class="panel-card-title"><i class="fas fa-chart-line"></i> Hasil Analisis</div>
       <div id="analysisResult" class="analysis-content">
         <div class="waiting-state">
           <i class="fas fa-info-circle"></i>
-          <p>Pilih site dan tipe coverage untuk melihat analisis</p>
+          <p>Pilih site untuk melihat analisis</p>
         </div>
       </div>
     </div>
 
-    <!-- DETAILED STATISTICS -->
-    <div class="detailed-stats">
-      <h3><i class="fas fa-chart-pie"></i> Statistik Coverage</h3>
+    <!-- BLOK 5: STATISTIK -->
+    <div class="panel-card">
+      <div class="panel-card-title"><i class="fas fa-chart-pie"></i> Statistik Coverage</div>
       <div class="stats-grid">
         <div class="stat-box">
-          <label>Total Area</label>
-          <span id="totalArea">0 km²</span>
+          <span class="stat-label">Total Area</span>
+          <span class="stat-value" id="totalArea">0 km²</span>
         </div>
-        <div class="stat-box excellent">
-          <label>Excellent</label>
-          <span id="excellentCoverage">0%</span>
+        <div class="stat-box stat-excellent">
+          <span class="stat-label">Excellent</span>
+          <span class="stat-value" id="excellentCoverage">0%</span>
         </div>
-        <div class="stat-box good">
-          <label>Good</label>
-          <span id="goodCoverage">0%</span>
+        <div class="stat-box stat-good">
+          <span class="stat-label">Good</span>
+          <span class="stat-value" id="goodCoverage">0%</span>
         </div>
-        <div class="stat-box poor">
-          <label>Poor</label>
-          <span id="poorCoverage">0%</span>
+        <div class="stat-box stat-poor">
+          <span class="stat-label">Poor</span>
+          <span class="stat-value" id="poorCoverage">0%</span>
         </div>
       </div>
     </div>
-  </div>
-</div>
 
-<!-- FILE INPUT HIDDEN -->
-<input type="file" id="shapefileInput" accept=".xlsx,.xls" style="display: none;">
+  </div><!-- /analysis-panel -->
+</div><!-- /coverage-container -->
+
+<input type="file" id="shapefileInput" accept=".xlsx,.xls" style="display:none;">
 {% endblock %}
 
 {% block extra_js %}

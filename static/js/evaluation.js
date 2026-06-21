@@ -1,609 +1,598 @@
-// ================================================
-// EVALUATION PAGE
-// ================================================
+'use strict';
+/* ================================================
+   evaluation.js v4
+   Fix: toggle switch sync peta kiri + analisis
+        5-range error legend
+        tinggi peta dikecilkan via CSS
+   ================================================ */
 
-// Global Variables
-let map;
-let routeLayer, siteLayer, spiderLayer;
-let simulationData = null;
-let currentMetric = 'rsrp';
-let cdfChart = null;
-let siteLatLng = null; // ✅ Titik acuan site
+let dtMap, simMap;
+let dtLayer, simLayer, siteLayerDt, siteLayerSim;
+let evalData   = [];
+let siteIndex  = {};
+let dbpPerSite = {};
+let lineChartR = null;
+let lineChartS = null;
+let currentMode = 'rsrp'; // ← state toggle aktif
 
-// ================================================
-// LEGEND DEFINITIONS
-// ================================================
-const RSRP_LEGEND = [
-  { label: '-85 ~ 0',     color: '#0042a5', fn: v => v >= -85  && v < 0    },
-  { label: '-95 ~ -85',   color: '#00a955', fn: v => v >= -95  && v < -85  },
-  { label: '-105 ~ -95',  color: '#70ff66', fn: v => v >= -105 && v < -95  },
-  { label: '-120 ~ -105', color: '#fffb00', fn: v => v >= -120 && v < -105 },
-  { label: '-140 ~ -120', color: '#ff3333', fn: v => v >= -140 && v < -120 },
-  { label: '< -140',      color: '#800000', fn: v => v < -140  },
+const SESSION_KEY = 'siteIndexData';
+const C    = 3e8;
+const FREQ = 2300e6;
+const H_UT = 1.5;
+const H_E  = 1.0;
+
+const DIST_RANGES = [
+  { label: '< 200 m',     min: 0,   max: 200,     short: '<200'    },
+  { label: '200 – 400 m', min: 200, max: 400,     short: '200-400' },
+  { label: '400 – 600 m', min: 400, max: 600,     short: '400-600' },
+  { label: '600 – 800 m', min: 600, max: 800,     short: '600-800' },
+  { label: '> 800 m',     min: 800, max: Infinity, short: '>800'    },
 ];
 
-const SINR_LEGEND = [
-  { label: '20 ~ 40',  color: '#0042a5', fn: v => v >= 20  && v < 40  },
-  { label: '10 ~ 20',  color: '#00a955', fn: v => v >= 10  && v < 20  },
-  { label: '0 ~ 10',   color: '#70ff66', fn: v => v >= 0   && v < 10  },
-  { label: '-5 ~ 0',   color: '#fffb00', fn: v => v >= -5  && v < 0   },
-  { label: '-40 ~ -5', color: '#ff3333', fn: v => v >= -40 && v < -5  },
-  { label: '< -40',    color: '#800000', fn: v => v < -40  },
-];
-
-function getLegendBuckets(metric) {
-  return metric === 'rsrp' ? RSRP_LEGEND : SINR_LEGEND;
+// ── 5-range error scale ───────────────────────────────────────────────────────
+// Over besar > 10 | Over kecil 3–10 | Akurat ±3 | Under kecil 3–10 | Under besar > 10
+function errorColor5(delta) {
+  if (delta === null) return '#cccccc';
+  if (delta >  10) return '#ff3333';   // over besar
+  if (delta >   3) return '#fffb00';   // over kecil
+  if (delta >= -3) return '#70ff66';   // akurat
+  if (delta >= -10) return '#00c1e7';  // under kecil
+  return '#0042a5';                    // under besar
 }
 
-function getColorForValue(value, metric) {
-  const hit = getLegendBuckets(metric).find(b => b.fn(value));
-  return hit ? hit.color : '#cccccc';
+function errorLabel5(unit) {
+  return [
+    { label: `Over besar  > 10 ${unit}`,  color: '#ff3333' },
+    { label: `Over kecil  3–10 ${unit}`,  color: '#fffb00' },
+    { label: `Akurat  ±3 ${unit}`,         color: '#70ff66' },
+    { label: `Under kecil 3–10 ${unit}`,  color: '#00c1e7' },
+    { label: `Under besar > 10 ${unit}`,  color: '#0042a5' },
+  ];
 }
 
-// TA Distance Segments
-const DISTANCE_SEGMENTS = [
-  { ta: 0, min: 0,     max: 39    },
-  { ta: 1, min: 39,    max: 117   },
-  { ta: 2, min: 117,   max: 273   },
-  { ta: 3, min: 273,   max: 507   },
-  { ta: 4, min: 507,   max: 975   },
-  { ta: 5, min: 975,   max: 1755  },
-  { ta: 6, min: 1755,  max: 3315  },
-  { ta: 7, min: 3315,  max: 7215  },
-  { ta: 8, min: 7215,  max: 15015 },
+const SITE_PALETTE = [
+  '#e6194b','#3cb44b','#4363d8','#f58231','#911eb4','#42d4f4',
+  '#f032e6','#bfef45','#469990','#9a6324','#800000','#aaffc3',
 ];
 
-// ================================================
-// INITIALIZATION
-// ================================================
-document.addEventListener('DOMContentLoaded', function () {
-  initializeMap();
-  attachEventListeners();
-  console.log('Evaluation page initialized');
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const calcDbp  = hBS => 4 * (hBS - H_E) * (H_UT - H_E) * FREQ / C;
+const mean     = arr => arr.length ? arr.reduce((s,v)=>s+v,0)/arr.length : null;
+const rmseCalc = arr => arr.length ? Math.sqrt(arr.reduce((s,v)=>s+v*v,0)/arr.length) : null;
+const sdCalc   = (rmse, me) => (rmse !== null && me !== null) ? Math.sqrt(Math.max(0, rmse*rmse - me*me)) : null;
+const fmt2     = v => (v !== null && v !== undefined) ? v.toFixed(2) : '—';
+const fmtSign  = v => (v !== null && v !== undefined) ? (v >= 0 ? '+' : '') + v.toFixed(2) : '—';
+const byId     = id => document.getElementById(id);
+
+// RSRP color untuk peta DT
+function rsrpColor(v) {
+  if (v === null) return '#ccc';
+  if (v >= -85)  return '#0042a5';
+  if (v >= -95)  return '#00a955';
+  if (v >= -105) return '#70ff66';
+  if (v >= -120) return '#fffb00';
+  return '#ff3333';
+}
+// SINR color untuk peta DT
+function sinrColor(v) {
+  if (v === null) return '#ccc';
+  if (v >= 20) return '#0042a5';
+  if (v >= 10) return '#00a955';
+  if (v >=  0) return '#70ff66';
+  if (v >= -5) return '#fffb00';
+  return '#ff3333';
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  initMaps();
+  loadSiteIndex();
+  attachListeners();
 });
 
-function initializeMap() {
-  map = L.map('evaluationMap').setView([-6.2088, 106.8456], 14);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap', maxZoom: 19
-  }).addTo(map);
-  routeLayer  = L.layerGroup().addTo(map);
-  siteLayer   = L.layerGroup().addTo(map);
-  spiderLayer = L.layerGroup().addTo(map); // ✅ Layer khusus spider lines
-}
+function initMaps() {
+  const tile = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const opt  = { attribution: '© OpenStreetMap', maxZoom: 19 };
+  const ctr  = [-6.2088, 106.8456];
 
-function attachEventListeners() {
-  document.getElementById('uploadSimResultBtn')?.addEventListener('click', () => {
-    document.getElementById('simResultInput').click();
+  dtMap  = L.map('dtEvalMap').setView(ctr, 13);
+  simMap = L.map('simEvalMap').setView(ctr, 13);
+  L.tileLayer(tile, opt).addTo(dtMap);
+  L.tileLayer(tile, opt).addTo(simMap);
+
+  dtLayer      = L.layerGroup().addTo(dtMap);
+  simLayer     = L.layerGroup().addTo(simMap);
+  siteLayerDt  = L.layerGroup().addTo(dtMap);
+  siteLayerSim = L.layerGroup().addTo(simMap);
+
+  // Sync kedua peta
+  let syncing = false;
+  dtMap.on('move', () => {
+    if (syncing) return; syncing = true;
+    simMap.setView(dtMap.getCenter(), dtMap.getZoom(), { animate: false });
+    syncing = false;
   });
-  document.getElementById('simResultInput')?.addEventListener('change', handleSimUpload);
-  document.getElementById('evaluateBtn')?.addEventListener('click', evaluateResults);
-  document.getElementById('parameterSelect')?.addEventListener('change', (e) => {
-    currentMetric = e.target.value;
-    if (simulationData) displayRouteOnMap();
+  simMap.on('move', () => {
+    if (syncing) return; syncing = true;
+    dtMap.setView(simMap.getCenter(), simMap.getZoom(), { animate: false });
+    syncing = false;
   });
-
-  // ✅ Live update saat input lat/lng site berubah
-  document.getElementById('siteLat')?.addEventListener('change', updateSiteAndRedraw);
-  document.getElementById('siteLng')?.addEventListener('change', updateSiteAndRedraw);
 }
 
-// ================================================
-// SITE INPUT — baca lat/lng dari toolbar
-// ================================================
-function updateSiteAndRedraw() {
-  const lat = parseFloat(document.getElementById('siteLat')?.value);
-  const lng = parseFloat(document.getElementById('siteLng')?.value);
-
-  if (isFinite(lat) && isFinite(lng)) {
-    siteLatLng = { lat, lng };
-    console.log(`Site updated: ${lat}, ${lng}`);
-  } else {
-    siteLatLng = null;
-  }
-
-  if (simulationData?.length) displayRouteOnMap();
-}
-
-// ================================================
-// FILE UPLOAD
-// ================================================
-function handleSimUpload(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  showLoading('Memuat hasil simulasi...');
-  const ext = file.name.split('.').pop().toLowerCase();
-
-  if (ext === 'csv' || ext === 'txt') {
-    Papa.parse(file, {
-      header: true,
-      dynamicTyping: true,
-      skipEmptyLines: true,
-      complete: (results) => processSimulationData(results.data),
-      error: (err) => { alert('❌ Error membaca CSV: ' + err.message); hideLoading(); }
-    });
-  } else if (ext === 'xlsx' || ext === 'xls') {
-    const reader = new FileReader();
-    reader.onload = function (evt) {
-      try {
-        const wb = XLSX.read(new Uint8Array(evt.target.result), { type: 'array' });
-        processSimulationData(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]));
-      } catch (err) {
-        alert('❌ Error membaca Excel: ' + err.message);
-        hideLoading();
+function loadSiteIndex() {
+  const saved = sessionStorage.getItem(SESSION_KEY);
+  if (saved) {
+    try {
+      const p = JSON.parse(saved);
+      if (p && Object.keys(p).length) {
+        siteIndex = p; computeAllDbp();
+        setStatus('siteStatus', `✅ ${Object.keys(siteIndex).length} site`, 'ok'); return;
       }
-    };
-    reader.readAsArrayBuffer(file);
+    } catch {}
+  }
+  setStatus('siteStatus', '⏳ Memuat site...', 'info');
+  fetch('/api/get-site').then(r=>r.json()).then(data => {
+    if (!data.has_site || !data.siteIndex) { setStatus('siteStatus','⚠️ Data site belum ada','warn'); return; }
+    siteIndex = data.siteIndex;
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(siteIndex));
+    computeAllDbp();
+    setStatus('siteStatus', `✅ ${Object.keys(siteIndex).length} site`, 'ok');
+  }).catch(() => setStatus('siteStatus','⚠️ Gagal memuat site','warn'));
+}
+
+function computeAllDbp() {
+  dbpPerSite = {};
+  Object.entries(siteIndex).forEach(([id,s]) => {
+    dbpPerSite[id] = calcDbp(parseFloat(s.height) || 30);
+  });
+}
+
+function attachListeners() {
+  byId('uploadBtn')?.addEventListener('click', () => byId('csvInput').click());
+  byId('csvInput')?.addEventListener('change', handleCsvUpload);
+
+  byId('analyzeRsrpBtn')?.addEventListener('click', () => {
+    currentMode = 'rsrp';
+    runAnalysis();
+  });
+  byId('analyzeSinrBtn')?.addEventListener('click', () => {
+    currentMode = 'sinr';
+    runAnalysis();
+  });
+  // Listener toggle lama (mapModeRsrp / mapModeSinr) dihapus —
+  // tidak ada lagi di HTML
+}
+ 
+
+// ── MODE SWITCH — sinkronisasi penuh ─────────────────────────────────────────
+function switchMode(mode) {
+  currentMode = mode;
+
+  // Update tombol aktif
+  byId('mapModeRsrp')?.classList.toggle('active', mode === 'rsrp');
+  byId('mapModeSinr')?.classList.toggle('active', mode === 'sinr');
+
+  if (!evalData.length) return;
+
+  // Update peta kiri (DT aktual — ganti warna sesuai mode)
+  renderDtMap(mode);
+  updateDtLegend(mode);
+
+  // Update peta kanan (error simulasi)
+  renderSimErrorMap(mode);
+  updateSimLegend(mode);
+
+  // Update analisis jika sudah pernah dijalankan
+  if (byId('resultsSection').style.display !== 'none') {
+    const mR = calcRangeMetrics('rsrp');
+    const mS = calcRangeMetrics('sinr');
+    buildConclusion(mR, mS, mode);
   }
 }
 
-function processSimulationData(rows) {
-  simulationData = [];
+// ── CSV UPLOAD ────────────────────────────────────────────────────────────────
+function handleCsvUpload(e) {
+  const file = e.target.files[0]; if (!file) return;
+  showLoading('Membaca CSV...');
+  Papa.parse(file, {
+    header: true, dynamicTyping: true, skipEmptyLines: true,
+    complete: r => processCsv(r.data),
+    error:    err => { alert('❌ Gagal baca CSV: ' + err.message); hideLoading(); }
+  });
+  e.target.value = '';
+}
+
+function processCsv(rows) {
+  evalData = [];
+  const siteColorMap = {};
+  let colorIdx = 0;
 
   rows.forEach((row, idx) => {
-    const point    = parseFloat(row.Point || row.point || idx + 1);
-    const lat      = parseFloat(row.Lat  || row.lat  || row.LAT  || row.Latitude);
-    const lng      = parseFloat(row.Lng  || row.lng  || row.LONG || row.LON || row.Longitude);
-    const rsrp     = parseFloat(row['RSRP(dBm)'] || row.RSRP || row.rsrp || row['RSRP (dBm)'] || row['RSRP_Sim(dBm)']);
-    const sinr     = parseFloat(row['SINR(dB)']  || row.SINR || row.sinr || row['SINR (dB)'] || row['SINR_Sim(dB)'] || row['SINR_Sim_Physical(dB)']);
-    const distance = parseFloat(
-      row['Distance(m)'] || row.Distance || row.distance || row['DISTANCE(m)'] || 0
-    );
+    const lat     = parseFloat(row.Latitude  || row.lat || row.LAT);
+    const lng     = parseFloat(row.Longitude || row.lng || row.LON || row.LONG);
+    const site    = String(row.Serving_Site  || row.serving_site || '').trim();
+    const dist    = parseFloat(row['Distance_to_Serving(m)'] || row.Distance_to_Serving || row.Distance || 0);
+    const rsrpSim = parseFloat(row['RSRP_Sim(dBm)']    || row.RSRP_Sim    || row.rsrp_sim);
+    const sinrSim = parseFloat(row['SINR_Sim(dB)']     || row.SINR_Sim    || row.sinr_sim);
+    const rsrpAkt = parseFloat(row['RSRP_Aktual(dBm)'] || row.RSRP_Aktual || row.rsrp_actual);
+    const sinrAkt = parseFloat(row['SINR_Aktual(dB)']  || row.SINR_Aktual || row.sinr_actual);
 
-    if (isFinite(lat) && isFinite(lng) && (isFinite(rsrp) || isFinite(sinr))) {
-      simulationData.push({
-        point,
-        lat, lng,
-        rsrp:     isFinite(rsrp) ? rsrp : null,
-        sinr:     isFinite(sinr) ? sinr : null,
-        distance: isFinite(distance) ? distance : 0,
-      });
-    }
-  });
+    const deltaRsrp = isFinite(parseFloat(row['Delta_RSRP(dB)'] || row.Delta_RSRP))
+      ? parseFloat(row['Delta_RSRP(dB)'] || row.Delta_RSRP)
+      : (isFinite(rsrpSim) && isFinite(rsrpAkt) ? rsrpSim - rsrpAkt : null);
+    const deltaSinr = isFinite(parseFloat(row['Delta_SINR(dB)'] || row.Delta_SINR))
+      ? parseFloat(row['Delta_SINR(dB)'] || row.Delta_SINR)
+      : (isFinite(sinrSim) && isFinite(sinrAkt) ? sinrSim - sinrAkt : null);
 
-  if (simulationData.length === 0) {
-    hideLoading();
-    alert('❌ Tidak ada data valid.\n\nFile harus memiliki kolom:\n- Lat/Lng\n- RSRP(dBm) dan/atau SINR(dB)\n- Distance(m)');
-    return;
-  }
+    if (!isFinite(lat) || !isFinite(lng)) return;
+    if (!siteColorMap[site]) siteColorMap[site] = SITE_PALETTE[colorIdx++ % SITE_PALETTE.length];
 
-  simulationData.sort((a, b) => a.distance - b.distance);
-
-  // ✅ Jika belum ada input site, coba tebak dari titik dengan distance terkecil
-  if (!siteLatLng) {
-    autoDetectSite();
-  }
-
-  const hasDist = simulationData.some(p => p.distance > 0);
-  const distInfo = hasDist
-    ? `Jarak: ${simulationData[0].distance.toFixed(0)}m – ${simulationData[simulationData.length-1].distance.toFixed(0)}m`
-    : 'Kolom Distance(m) tidak ditemukan';
-
-  document.getElementById('simStatus').textContent = `Sim: ✓ ${simulationData.length} pts`;
-  document.getElementById('simStatus').classList.add('uploaded');
-
-  displayRouteOnMap();
-  hideLoading();
-  checkReadyForEvaluation();
-
-  console.log(`Loaded ${simulationData.length} points. ${distInfo}`);
-}
-
-// ✅ Auto-detect posisi site dari titik dengan distance paling kecil
-function autoDetectSite() {
-  const closestPt = simulationData.reduce((a, b) => a.distance < b.distance ? a : b);
-  const latInput  = document.getElementById('siteLat');
-  const lngInput  = document.getElementById('siteLng');
-
-  // Hanya isi jika field kosong
-  if (latInput && !latInput.value) latInput.value = closestPt.lat.toFixed(6);
-  if (lngInput && !lngInput.value) lngInput.value = closestPt.lng.toFixed(6);
-
-  siteLatLng = { lat: closestPt.lat, lng: closestPt.lng };
-  console.log('Site auto-detected:', siteLatLng);
-}
-
-function checkReadyForEvaluation() {
-  const btn = document.getElementById('evaluateBtn');
-  if (btn && simulationData?.length > 0) btn.disabled = false;
-}
-
-// ================================================
-// MAP DISPLAY — Spider Mode
-// ================================================
-function displayRouteOnMap() {
-  routeLayer.clearLayers();
-  spiderLayer.clearLayers();
-  siteLayer.clearLayers();
-
-  if (!simulationData?.length) return;
-
-  const metric  = currentMetric === 'both' ? 'rsrp' : currentMetric;
-  const counts  = Array(6).fill(0);
-  const buckets = getLegendBuckets(metric);
-
-  // ✅ Render site marker jika ada
-  if (siteLatLng) {
-    const siteIcon = L.divIcon({
-      className: '',
-      html: `<div class="site-marker-icon">
-               <div class="site-pulse"></div>
-               <i class="fas fa-broadcast-tower"></i>
-             </div>`,
-      iconSize: [36, 36],
-      iconAnchor: [18, 18],
+    evalData.push({
+      idx: idx+1, lat, lng, site,
+      siteColor: siteColorMap[site] || '#888',
+      dist: isFinite(dist) ? dist : 0,
+      rsrpSim: isFinite(rsrpSim) ? rsrpSim : null,
+      sinrSim: isFinite(sinrSim) ? sinrSim : null,
+      rsrpAkt: isFinite(rsrpAkt) ? rsrpAkt : null,
+      sinrAkt: isFinite(sinrAkt) ? sinrAkt : null,
+      deltaRsrp, deltaSinr,
+      dBP: site && dbpPerSite[site] ? dbpPerSite[site] : null,
     });
-
-    L.marker([siteLatLng.lat, siteLatLng.lng], { icon: siteIcon })
-      .addTo(siteLayer)
-      .bindPopup(`<b>📡 Site</b><br>Lat: ${siteLatLng.lat.toFixed(6)}<br>Lng: ${siteLatLng.lng.toFixed(6)}`);
-  }
-
-  // ✅ Gambar spider lines: dari site ke tiap titik sampling
-  simulationData.forEach((point) => {
-    const value = metric === 'rsrp' ? point.rsrp : point.sinr;
-    if (value === null) return;
-
-    const color = getColorForValue(value, metric);
-    const bIdx  = buckets.findIndex(b => b.fn(value));
-    if (bIdx >= 0) counts[bIdx]++;
-
-    // Spider line dari site ke titik sampling
-    if (siteLatLng) {
-      L.polyline(
-        [[siteLatLng.lat, siteLatLng.lng], [point.lat, point.lng]],
-        { color: color, weight: 1.8, opacity: 0.55, dashArray: '4 3' }
-      ).addTo(spiderLayer);
-    }
-
-    // Titik sampling
-    L.circleMarker([point.lat, point.lng], {
-      radius: 5,
-      fillColor: color,
-      color: '#000',
-      weight: 0.8,
-      fillOpacity: 0.9
-    }).addTo(routeLayer)
-      .bindPopup(`
-        <b>Point ${point.point}</b><br>
-        Jarak dari Site: <b>${point.distance.toFixed(0)} m</b><br>
-        ${metric.toUpperCase()}: <b>${value.toFixed(1)} ${metric === 'rsrp' ? 'dBm' : 'dB'}</b>
-      `);
   });
 
-  updateMapLegend(counts, simulationData.length, metric);
+  if (!evalData.length) {
+    hideLoading(); alert('❌ Tidak ada data valid. Pastikan file adalah hasil export SimDT.'); return;
+  }
 
-  // Fit bounds mencakup semua titik + site
-  const allLatLng = simulationData.map(p => [p.lat, p.lng]);
-  if (siteLatLng) allLatLng.push([siteLatLng.lat, siteLatLng.lng]);
-  map.fitBounds(allLatLng);
+  const nR = evalData.filter(p => p.deltaRsrp !== null).length;
+  const nS = evalData.filter(p => p.deltaSinr !== null).length;
+  setStatus('csvStatus', `✅ ${evalData.length} titik | ${nR} RSRP | ${nS} SINR`, 'ok');
+
+  // Render peta dengan mode aktif saat ini
+  renderDtMap(currentMode);
+  renderSimErrorMap(currentMode);
+  renderSiteMarkers();
+  updateDtLegend(currentMode);
+  updateSimLegend(currentMode);
+  hideLoading();
+  byId('analyzeRsrpBtn').disabled = false;
+  byId('analyzeSinrBtn').disabled = false;
 }
 
-function updateMapLegend(counts, total, metric) {
-  const legend = document.getElementById('mapLegend');
-  const title  = document.getElementById('legendTitle');
-  const tbody  = document.getElementById('legendTableBody');
-  if (!legend || !title || !tbody) return;
+// ── MAP RENDER ────────────────────────────────────────────────────────────────
+function renderDtMap(mode) {
+  dtLayer.clearLayers();
+  if (!evalData.length) return;
 
-  legend.style.display = 'block';
-  title.textContent = metric === 'rsrp' ? 'RSRP (dBm)' : 'SINR (dB)';
-  tbody.innerHTML = '';
+  evalData.forEach(p => {
+    const val   = mode === 'sinr' ? p.sinrAkt : p.rsrpAkt;
+    const color = mode === 'sinr' ? sinrColor(val) : rsrpColor(val);
+    if (val === null) return;
+    const unit  = mode === 'sinr' ? 'dB' : 'dBm';
+    L.circleMarker([p.lat, p.lng], {
+      radius: 4, fillColor: color,
+      color: 'rgba(0,0,0,0.2)', weight: 0.5, fillOpacity: 0.92,
+    }).addTo(dtLayer)
+      .bindPopup(`<b>Drive Test #${p.idx}</b><br>
+        ${mode.toUpperCase()}: <b>${val.toFixed(1)} ${unit}</b><br>
+        Jarak: <b>${p.dist.toFixed(0)} m</b>`);
+  });
 
-  getLegendBuckets(metric).forEach((b, i) => {
-    const pct = total > 0 ? ((counts[i] / total) * 100).toFixed(1) : '0.0';
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td><div class="color-box" style="background:${b.color}"></div></td>
+  const bounds = evalData.map(p => [p.lat, p.lng]);
+  if (bounds.length) dtMap.fitBounds(bounds);
+}
+
+function renderSimErrorMap(mode) {
+  simLayer.clearLayers();
+  if (!evalData.length) return;
+
+  evalData.forEach(p => {
+    const delta = mode === 'sinr' ? p.deltaSinr : p.deltaRsrp;
+    const color = errorColor5(delta);
+    const unit  = mode === 'sinr' ? 'dB' : 'dBm';
+    L.circleMarker([p.lat, p.lng], {
+      radius: 4, fillColor: color,
+      color: 'rgba(0,0,0,0.2)', weight: 0.5, fillOpacity: 0.92,
+    }).addTo(simLayer)
+      .bindPopup(`<b>Simulasi #${p.idx}</b><br>
+        Δ${mode.toUpperCase()}: <b>${fmtSign(delta)} ${unit}</b><br>
+        Sim: <b>${(mode==='sinr'?p.sinrSim:p.rsrpSim)?.toFixed(1) ?? '—'} ${unit}</b><br>
+        Aktual: <b>${(mode==='sinr'?p.sinrAkt:p.rsrpAkt)?.toFixed(1) ?? '—'} ${unit}</b><br>
+        Jarak: <b>${p.dist.toFixed(0)} m</b>`);
+  });
+}
+
+function renderSiteMarkers() {
+  siteLayerDt.clearLayers();
+  siteLayerSim.clearLayers();
+  const sites = [...new Set(evalData.map(p => p.site).filter(Boolean))];
+  sites.forEach(id => {
+    const s = siteIndex[id]; if (!s) return;
+    const mkr = () => L.circleMarker([s.lat, s.lng], {
+      radius: 9, fillColor: '#ffd000', color: '#000', weight: 2, fillOpacity: 1,
+    }).bindPopup(`<b>📡 ${id}</b><br>H: ${s.height}m<br>dBP: ${dbpPerSite[id]?.toFixed(0) ?? '?'}m`);
+    mkr().addTo(siteLayerDt);
+    mkr().addTo(siteLayerSim);
+
+    const lbl = L.marker([s.lat, s.lng], {
+      icon: L.divIcon({
+        className:'',
+        html:`<div style="background:rgba(255,208,0,0.9);color:#111;font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;white-space:nowrap;margin-top:-20px;margin-left:13px;border:1px solid rgba(0,0,0,0.2)">${id}</div>`,
+        iconAnchor:[0,0]
+      }), interactive:false
+    });
+    lbl.addTo(siteLayerDt);
+    lbl.addTo(siteLayerSim);
+  });
+}
+
+function updateDtLegend(mode) {
+  const tbody = byId('dtLegendBody'); if (!tbody) return;
+  byId('dtLegendTitle').textContent = mode === 'sinr' ? 'SINR Aktual (dB)' : 'RSRP Aktual (dBm)';
+
+  const buckets = mode === 'sinr' ? [
+    { label:'≥ 20 dB',      color:'#0042a5', fn: v => v >= 20  },
+    { label:'10 – 20 dB',   color:'#00a955', fn: v => v >= 10 && v < 20 },
+    { label:'0 – 10 dB',    color:'#70ff66', fn: v => v >= 0  && v < 10 },
+    { label:'-5 – 0 dB',    color:'#fffb00', fn: v => v >= -5 && v < 0  },
+    { label:'< -5 dB',      color:'#ff3333', fn: v => v < -5  },
+  ] : [
+    { label:'-85 ~ 0 dBm',     color:'#0042a5', fn: v => v >= -85  },
+    { label:'-95 ~ -85 dBm',   color:'#00a955', fn: v => v >= -95  && v < -85  },
+    { label:'-105 ~ -95 dBm',  color:'#70ff66', fn: v => v >= -105 && v < -95  },
+    { label:'-120 ~ -105 dBm', color:'#fffb00', fn: v => v >= -120 && v < -105 },
+    { label:'< -120 dBm',      color:'#ff3333', fn: v => v < -120  },
+  ];
+
+  const vals  = evalData.map(p => mode === 'sinr' ? p.sinrAkt : p.rsrpAkt).filter(v => v !== null);
+  const total = vals.length || 1;
+  tbody.innerHTML = buckets.map(b => {
+    const cnt = vals.filter(b.fn).length;
+    return `<tr>
+      <td><span class="legend-swatch" style="background:${b.color}"></span></td>
       <td>${b.label}</td>
-      <td><b>${pct}%</b></td>`;
-    tbody.appendChild(row);
-  });
+      <td><b>${((cnt/total)*100).toFixed(1)}%</b></td>
+    </tr>`;
+  }).join('');
+  byId('dtLegendBox').style.display = 'block';
 }
 
-// ================================================
-// EVALUATION
-// ================================================
-function evaluateResults() {
-  if (!simulationData?.length) {
-    alert('⚠️ Upload hasil simulasi terlebih dahulu');
-    return;
-  }
+function updateSimLegend(mode) {
+  const tbody = byId('simLegendBody'); if (!tbody) return;
+  const unit = mode === 'sinr' ? 'dB' : 'dBm';
+  byId('simLegendTitle').textContent = `Error ${mode.toUpperCase()} (Sim−DT)`;
+  tbody.innerHTML = errorLabel5(unit).map(b =>
+    `<tr>
+      <td><span class="legend-swatch" style="background:${b.color}"></span></td>
+      <td colspan="2">${b.label}</td>
+    </tr>`).join('');
+  byId('simLegendBox').style.display = 'block';
+}
 
-  showLoading('Mengevaluasi hasil simulasi...');
+// ── ANALYSIS ──────────────────────────────────────────────────────────────────
+function runAnalysis() {
+  if (!evalData.length) return;
+  // Update tampilan peta sesuai mode yang dipilih sebelum analisis
+  renderDtMap(currentMode);
+  updateDtLegend(currentMode);
+  renderSimErrorMap(currentMode);
+  updateSimLegend(currentMode);
+
+  showLoading('Menganalisis...');
   setTimeout(() => {
     try {
-      generateSegmentTable();
-      generateCDFChart();
-      generateConclusion();
+      const mR = calcRangeMetrics('rsrp');
+      const mS = calcRangeMetrics('sinr');
+      buildLineCharts(mR, mS);
+      buildMetricTable(mR, mS);
+      buildConclusion(mR, mS, currentMode);
+      byId('resultsSection').style.display = 'flex';
+      byId('resultsSection')?.scrollIntoView({ behavior: 'smooth' });
       hideLoading();
-    } catch (err) {
-      console.error(err);
-      alert('❌ Error saat evaluasi: ' + err.message);
-      hideLoading();
-    }
-  }, 400);
+    } catch (err) { console.error(err); alert('❌ ' + err.message); hideLoading(); }
+  }, 300);
 }
 
-// ================================================
-// SEGMENT TABLE (TA)
-// ================================================
-function generateSegmentTable() {
-  const tbody = document.getElementById('segmentTableBody');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-
-  let hasData = false;
-
-  DISTANCE_SEGMENTS.forEach(seg => {
-    const pts = simulationData.filter(p => p.distance >= seg.min && p.distance < seg.max);
-    if (!pts.length) return;
-    hasData = true;
-
-    const domRSRP = dominantCategory(pts, 'rsrp');
-    const domSINR = dominantCategory(pts, 'sinr');
-
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td>${seg.ta}</td>
-      <td>${seg.min} – ${seg.max} m</td>
-      <td><span class="category-badge ${badgeClass(domRSRP)}">${categoryLabel(domRSRP)}</span></td>
-      <td><span class="category-badge ${badgeClass(domSINR)}">${categoryLabel(domSINR)}</span></td>`;
-    tbody.appendChild(row);
+function calcRangeMetrics(key) {
+  return DIST_RANGES.map(r => {
+    const pts   = evalData.filter(p => p.dist >= r.min && p.dist < r.max);
+    const diffs = pts.map(p => key==='rsrp' ? p.deltaRsrp : p.deltaSinr).filter(v => v !== null);
+    const me   = mean(diffs);
+    const rmse = rmseCalc(diffs);
+    const sd   = sdCalc(rmse, me);
+    return { label: r.label, short: r.short, n: diffs.length, me, rmse, sd };
   });
-
-  if (!hasData) {
-    tbody.innerHTML = '<tr><td colspan="4" class="no-data">Kolom Distance(m) tidak ditemukan atau semua jarak = 0</td></tr>';
-  }
 }
 
-function dominantCategory(pts, metric) {
-  const tally   = {};
-  const buckets = getLegendBuckets(metric);
-
-  pts.forEach(p => {
-    const v = metric === 'rsrp' ? p.rsrp : p.sinr;
-    if (v === null) return;
-    const idx = buckets.findIndex(b => b.fn(v));
-    const key = idx >= 0 ? buckets[idx].label : '?';
-    tally[key] = (tally[key] || 0) + 1;
-  });
-
-  return Object.keys(tally).length
-    ? Object.keys(tally).reduce((a, b) => tally[a] > tally[b] ? a : b)
-    : '-';
+function calcGlobalMetrics(key) {
+  const diffs = evalData.map(p => key==='rsrp' ? p.deltaRsrp : p.deltaSinr).filter(v => v !== null);
+  const me = mean(diffs), rmse = rmseCalc(diffs), sd = sdCalc(rmse, me);
+  return { me, rmse, sd, n: diffs.length };
 }
 
-function categoryLabel(label) { return label; }
-
-function badgeClass(label) {
-  const rsrpIdx = RSRP_LEGEND.findIndex(b => b.label === label);
-  const sinrIdx = SINR_LEGEND.findIndex(b => b.label === label);
-  const idx     = rsrpIdx >= 0 ? rsrpIdx : sinrIdx;
-  const classes = ['sangat-baik', 'baik', 'normal', 'agak-buruk', 'buruk', 'sangat-buruk'];
-  return classes[idx] ?? 'normal';
+// ── LINE CHARTS ───────────────────────────────────────────────────────────────
+function buildLineCharts(mR, mS) {
+  if (lineChartR) { lineChartR.destroy(); lineChartR = null; }
+  if (lineChartS) { lineChartS.destroy(); lineChartS = null; }
+  lineChartR = makeLineChart('lineChartRsrp', mR, 'dBm');
+  lineChartS = makeLineChart('lineChartSinr', mS, 'dB');
 }
 
-// ================================================
-// CDF CHART
-// ================================================
-function generateCDFChart() {
-  if (cdfChart) { cdfChart.destroy(); cdfChart = null; }
-
-  const ctx = document.getElementById('cdfChart');
-  if (!ctx) return;
-
-  const rsrpVals = simulationData.map(p => p.rsrp).filter(v => v !== null).sort((a, b) => a - b);
-  const sinrVals = simulationData.map(p => p.sinr).filter(v => v !== null).sort((a, b) => a - b);
-
-  function buildCCDF(sorted) {
-    const n = sorted.length;
-    return sorted.map((v, i) => ({
-      x: v,
-      y: parseFloat(((1 - i / n) * 100).toFixed(2))
-    }));
-  }
-
-  const rsrpCCDF = buildCCDF(rsrpVals);
-  const sinrCCDF = buildCCDF(sinrVals);
-
-  cdfChart = new Chart(ctx.getContext('2d'), {
+function makeLineChart(ctxId, metrics, unit) {
+  const ctx = byId(ctxId); if (!ctx) return null;
+  return new Chart(ctx.getContext('2d'), {
     type: 'line',
     data: {
+      labels: metrics.map(m => m.label),
       datasets: [
-        {
-          label: 'RSRP (dBm)',
-          data: rsrpCCDF,
-          borderColor: '#1F3C88',
-          backgroundColor: 'rgba(31,60,136,0.08)',
-          borderWidth: 2.5,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          tension: 0.3,
-          yAxisID: 'y',
-          xAxisID: 'xRSRP',
-          fill: true,
-        },
-        {
-          label: 'SINR (dB)',
-          data: sinrCCDF,
-          borderColor: '#28a745',
-          backgroundColor: 'rgba(40,167,69,0.06)',
-          borderWidth: 2.5,
-          pointRadius: 0,
-          pointHoverRadius: 4,
-          tension: 0.3,
-          yAxisID: 'y',
-          xAxisID: 'xSINR',
-          fill: true,
-        }
+        { label:`ME (${unit})`,   data: metrics.map(m => m.me   !== null ? +m.me.toFixed(2)   : null),
+          borderColor:'#1F3C88', backgroundColor:'rgba(31,60,136,0.08)',
+          borderWidth:2.5, pointRadius:5, pointBackgroundColor:'#1F3C88', tension:0.3, fill:false },
+        { label:`RMSE (${unit})`, data: metrics.map(m => m.rmse !== null ? +m.rmse.toFixed(2)  : null),
+          borderColor:'#e34a33', backgroundColor:'rgba(227,74,51,0.06)',
+          borderWidth:2.5, pointRadius:5, pointBackgroundColor:'#e34a33', borderDash:[6,3], tension:0.3, fill:false },
+        { label:`SD (${unit})`,   data: metrics.map(m => m.sd   !== null ? +m.sd.toFixed(2)   : null),
+          borderColor:'#28a745', backgroundColor:'rgba(40,167,69,0.06)',
+          borderWidth:2, pointRadius:4, pointBackgroundColor:'#28a745', borderDash:[3,3], tension:0.3, fill:false },
       ]
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
       plugins: {
-        legend: { display: true, position: 'top' },
-        tooltip: {
-          callbacks: {
-            title: (items) => items.map(i => {
-              const unit = i.dataset.label.includes('RSRP') ? 'dBm' : 'dB';
-              return `${i.dataset.label}: ${parseFloat(i.parsed.x).toFixed(1)} ${unit}`;
-            }).join('  |  '),
-            label: (item) => `${item.parsed.y.toFixed(1)}% titik ≥ nilai ini`,
-          }
-        },
+        legend:{ display:true, position:'top', labels:{ boxWidth:14, font:{ size:11 }, padding:14 }},
+        tooltip:{ callbacks:{ label: item => `${item.dataset.label}: ${item.parsed.y !== null ? (item.parsed.y>=0?'+':'')+item.parsed.y.toFixed(2) : '—'} ${unit}` }}
       },
       scales: {
-        y: {
-          title: { display: true, text: '% Titik ≥ Nilai (CCDF)', font: { weight: 'bold' } },
-          min: 0, max: 100,
-          ticks: { callback: v => v + '%' },
-          grid: { color: 'rgba(0,0,0,0.07)' }
-        },
-        xRSRP: {
-          type: 'linear', position: 'bottom',
-          title: { display: true, text: 'RSRP (dBm)', color: '#1F3C88', font: { weight: 'bold' } },
-          ticks: { color: '#1F3C88' },
-          grid: { color: 'rgba(31,60,136,0.08)' }
-        },
-        xSINR: {
-          type: 'linear', position: 'top',
-          title: { display: true, text: 'SINR (dB)', color: '#28a745', font: { weight: 'bold' } },
-          ticks: { color: '#28a745' },
-          grid: { display: false }
-        }
+        x:{ title:{ display:true, text:'Rentang Jarak dari Site', font:{ weight:'bold', size:11 }},
+            grid:{ color:'rgba(0,0,0,0.05)' }, ticks:{ font:{ size:10 }}},
+        y:{ title:{ display:true, text:`Nilai (${unit})`, font:{ weight:'bold', size:11 }},
+            grid:{ color:'rgba(0,0,0,0.07)' },
+            ticks:{ callback: v => (v>=0?'+':'')+v.toFixed(1), font:{ size:10 }}}
       }
     }
   });
-
-  renderCDFSummary(rsrpVals, sinrVals);
-  console.log('CDF chart generated');
 }
 
-function renderCDFSummary(rsrpVals, sinrVals) {
-  const el = document.getElementById('cdfSummary');
-  if (!el) return;
+// ── METRIC TABLE ──────────────────────────────────────────────────────────────
+function buildMetricTable(mR, mS) {
+  const tbody = byId('metricTableBody'); if (!tbody) return;
+  tbody.innerHTML = '';
+  const gR = calcGlobalMetrics('rsrp'), gS = calcGlobalMetrics('sinr');
 
-  function pctAbove(vals, threshold) {
-    if (!vals.length) return 0;
-    return (vals.filter(v => v >= threshold).length / vals.length * 100).toFixed(1);
-  }
-
-  const rsrpRows = [
-    { label: 'Sangat Baik (≥ -85 dBm)',  pct: pctAbove(rsrpVals, -85),  color: '#0042a5' },
-    { label: 'Baik (≥ -95 dBm)',          pct: pctAbove(rsrpVals, -95),  color: '#00a955' },
-    { label: 'Normal (≥ -105 dBm)',        pct: pctAbove(rsrpVals, -105), color: '#70cc44' },
-    { label: 'Buruk (≥ -120 dBm)',         pct: pctAbove(rsrpVals, -120), color: '#e0b800' },
-  ];
-
-  const sinrRows = [
-    { label: 'Sangat Baik (≥ 20 dB)',  pct: pctAbove(sinrVals, 20), color: '#0042a5' },
-    { label: 'Baik (≥ 10 dB)',         pct: pctAbove(sinrVals, 10), color: '#00a955' },
-    { label: 'Normal (≥ 0 dB)',        pct: pctAbove(sinrVals,  0), color: '#70cc44' },
-    { label: 'Buruk (≥ -5 dB)',        pct: pctAbove(sinrVals, -5), color: '#e0b800' },
-  ];
-
-  const makeTable = (rows, metricLabel) => `
-    <div class="cdf-summary-block">
-      <h4>${metricLabel}</h4>
-      <table class="cdf-summary-table">
-        ${rows.map(r => `
-          <tr>
-            <td><span class="cdf-dot" style="background:${r.color}"></span>${r.label}</td>
-            <td class="cdf-pct">${r.pct}%</td>
-            <td class="cdf-bar-cell"><div class="cdf-bar" style="width:${r.pct}%;background:${r.color}"></div></td>
-          </tr>`).join('')}
-      </table>
-    </div>`;
-
-  el.innerHTML = makeTable(rsrpRows, 'RSRP Coverage') + makeTable(sinrRows, 'SINR Quality');
+  DIST_RANGES.forEach((r, i) => {
+    const mr = mR[i], ms = mS[i];
+    const trend = getTrend(mr.me);
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr>
+        <td class="td-range"><b>${r.label}</b></td>
+        <td class="td-n">${mr.n || '—'}</td>
+        <td class="${meClass(mr.me)}">${fmtSign(mr.me)}</td>
+        <td>${fmt2(mr.rmse)}</td>
+        <td>${fmt2(mr.sd)}</td>
+        <td class="${meClass(ms.me)}">${fmtSign(ms.me)}</td>
+        <td>${fmt2(ms.rmse)}</td>
+        <td>${fmt2(ms.sd)}</td>
+        <td><span class="trend-badge ${trend.cls}">${trend.icon} ${trend.text}</span></td>
+      </tr>`);
+  });
+  tbody.insertAdjacentHTML('beforeend', `
+    <tr class="total-row">
+      <td><b>Keseluruhan</b></td>
+      <td class="td-n"><b>${evalData.length}</b></td>
+      <td class="${meClass(gR.me)}"><b>${fmtSign(gR.me)}</b></td>
+      <td><b>${fmt2(gR.rmse)}</b></td>
+      <td><b>${fmt2(gR.sd)}</b></td>
+      <td class="${meClass(gS.me)}"><b>${fmtSign(gS.me)}</b></td>
+      <td><b>${fmt2(gS.rmse)}</b></td>
+      <td><b>${fmt2(gS.sd)}</b></td>
+      <td>—</td>
+    </tr>`);
 }
 
-// ================================================
-// CONCLUSION
-// ================================================
-function generateConclusion() {
-  const rsrpVals = simulationData.map(p => p.rsrp).filter(v => v !== null);
-  const sinrVals = simulationData.map(p => p.sinr).filter(v => v !== null);
-
-  const pctAbove = (vals, thr) => vals.length ? vals.filter(v => v >= thr).length / vals.length * 100 : 0;
-
-  const rsrpGood = pctAbove(rsrpVals, -95);
-  const rsrpPoor = 100 - pctAbove(rsrpVals, -120);
-  const sinrGood = pctAbove(sinrVals, 10);
-  const sinrPoor = 100 - pctAbove(sinrVals, -5);
-
-  let statusHtml;
-  if (rsrpGood >= 70 && sinrGood >= 70) {
-    statusHtml = `<div class="conclusion-success">
-      <strong>✅ Kualitas Layanan Sangat Baik</strong><br>
-      Coverage RSRP ≥ -95 dBm: <b>${rsrpGood.toFixed(1)}%</b> dari rute.
-      SINR ≥ 10 dB: <b>${sinrGood.toFixed(1)}%</b>. Layanan di rute ini sudah optimal.
-    </div>`;
-  } else if (rsrpPoor > 20 || sinrPoor > 20) {
-    statusHtml = `<div class="conclusion-warning">
-      <strong>⚠️ Terdapat Area Bermasalah</strong><br>
-      RSRP di bawah -120 dBm: <b>${rsrpPoor.toFixed(1)}%</b> titik.
-      SINR di bawah -5 dB: <b>${sinrPoor.toFixed(1)}%</b> titik.
-      Perlu review parameter site atau penambahan coverage.
-    </div>`;
-  } else {
-    statusHtml = `<div class="conclusion-highlight">
-      <strong>📊 Kualitas Layanan Memadai</strong><br>
-      Distribusi sinyal sepanjang rute dalam batas yang dapat diterima.
-      Beberapa titik mungkin dapat ditingkatkan dengan optimasi parameter.
-    </div>`;
-  }
-
-  const hasDist = simulationData.some(p => p.distance > 0);
-  const distNote = hasDist
-    ? `Rentang jarak dari site: ${simulationData[0].distance.toFixed(0)}m – ${simulationData[simulationData.length-1].distance.toFixed(0)}m`
-    : 'Kolom Distance(m) tidak terdeteksi di CSV';
-
-  const siteNote = siteLatLng
-    ? `Koordinat site: ${siteLatLng.lat.toFixed(6)}, ${siteLatLng.lng.toFixed(6)}`
-    : 'Koordinat site belum diinput';
-
-  const html = `<div class="conclusion-text">
-    ${statusHtml}
-    <p><strong>Detail:</strong></p>
-    <ul>
-      <li>Total titik sampling: <b>${simulationData.length}</b></li>
-      <li>${siteNote}</li>
-      <li>${distNote}</li>
-      <li>RSRP ≥ -85 dBm (Sangat Baik): <b>${pctAbove(rsrpVals, -85).toFixed(1)}%</b></li>
-      <li>RSRP ≥ -95 dBm (Baik+): <b>${pctAbove(rsrpVals, -95).toFixed(1)}%</b></li>
-      <li>SINR ≥ 20 dB (Sangat Baik): <b>${pctAbove(sinrVals, 20).toFixed(1)}%</b></li>
-      <li>SINR ≥ 10 dB (Baik+): <b>${pctAbove(sinrVals, 10).toFixed(1)}%</b></li>
-    </ul>
-    <p><strong>Rekomendasi:</strong></p>
-    <ul>
-      ${rsrpPoor > 15 || sinrPoor > 15
-        ? '<li>Review parameter propagasi (tinggi antena, azimuth, tilt)</li><li>Pertimbangkan penambahan site atau repeater di area lemah</li>'
-        : '<li>Coverage sudah optimal. Pertahankan konfigurasi saat ini.</li>'}
-    </ul>
-  </div>`;
-
-  const el = document.getElementById('conclusionContent');
-  if (el) el.innerHTML = html;
+function getTrend(me) {
+  if (me === null) return { icon:'—', text:'—', cls:'' };
+  if (me >  3) return { icon:'🔼', text:'Over-predict',  cls:'trend-over'  };
+  if (me < -3) return { icon:'🔽', text:'Under-predict', cls:'trend-under' };
+  return { icon:'✅', text:'Akurat', cls:'trend-ok' };
+}
+function meClass(me) {
+  if (me === null) return '';
+  if (Math.abs(me) > 8) return 'val-bad';
+  if (Math.abs(me) > 4) return 'val-warn';
+  return 'val-ok';
 }
 
-// ================================================
-// UTILITY
-// ================================================
-function showLoading(text = 'Memproses...') {
+// ── CONCLUSION — responsif terhadap mode ─────────────────────────────────────
+function buildConclusion(mR, mS, mode) {
+  const el = byId('conclusionContent'); if (!el) return;
+
+  // Pilih metrik sesuai mode aktif
+  const metrics  = mode === 'sinr' ? mS : mR;
+  const gMetric  = calcGlobalMetrics(mode);
+  const unit     = mode === 'sinr' ? 'dB' : 'dBm';
+  const label    = mode.toUpperCase();
+
+  const zonaOver   = metrics.filter(m => m.me !== null && m.me >  3).map(m => m.label);
+  const zonaUnder  = metrics.filter(m => m.me !== null && m.me < -3).map(m => m.label);
+  const zonaAkurat = metrics.filter(m => m.me !== null && Math.abs(m.me) <= 3).map(m => m.label);
+
+  const sitesInData = [...new Set(evalData.map(p=>p.site).filter(Boolean))];
+  const dbpVals = sitesInData.map(id=>dbpPerSite[id]).filter(v=>v&&isFinite(v)).sort((a,b)=>a-b);
+  const dBP_min = dbpVals.length ? Math.min(...dbpVals) : null;
+  const dBP_max = dbpVals.length ? Math.max(...dbpVals) : null;
+
+  const statusClass = Math.abs(gMetric.me||0) <= 5 ? 'verdict-ok' : Math.abs(gMetric.me||0) <= 10 ? 'verdict-warn' : 'verdict-bad';
+  const statusIcon  = Math.abs(gMetric.me||0) <= 5 ? '✅' : '⚠️';
+
+  el.innerHTML = `
+    <div class="verdict-block ${statusClass}">
+      <span class="verdict-icon">${statusIcon}</span>
+      <div>
+        <div class="verdict-title">Akurasi Model ${label}</div>
+        <div class="verdict-sub">
+          ME = <b>${fmtSign(gMetric.me)} ${unit}</b> &nbsp;|&nbsp;
+          RMSE = <b>${fmt2(gMetric.rmse)} ${unit}</b> &nbsp;|&nbsp;
+          SD = <b>${fmt2(gMetric.sd)} ${unit}</b>
+        </div>
+      </div>
+    </div>
+
+    <div class="conclusion-findings">
+      <div class="finding-item">
+        <div class="finding-num">1</div>
+        <div class="finding-body">
+          <div class="finding-title">Pola Error per Jarak — ${label}</div>
+          <div class="finding-text">
+            ${zonaOver.length  ? `Simulasi <b>over-predict</b> di zona <b>${zonaOver.join(', ')}</b> — model terlalu optimis di jarak tersebut.` : ''}
+            ${zonaAkurat.length? ` Zona <b>${zonaAkurat.join(', ')}</b> menunjukkan akurasi terbaik.` : ''}
+            ${zonaUnder.length ? ` Simulasi <b>under-predict</b> di zona <b>${zonaUnder.join(', ')}</b> — model terlalu konservatif di jarak tersebut.` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="finding-item">
+        <div class="finding-num">2</div>
+        <div class="finding-body">
+          <div class="finding-title">Pengaruh Breakpoint Distance</div>
+          <div class="finding-text">
+            ${dBP_min !== null
+              ? `Site dalam data memiliki rentang dBP <b>${dBP_min.toFixed(0)}m – ${dBP_max.toFixed(0)}m</b> akibat variasi tinggi antena.
+                 Di rentang jarak yang beririsan dengan zona ini, error bervariasi lebih besar karena slope path loss bergantung pada site mana yang menjadi serving cell.`
+              : 'Data site tidak tersedia untuk analisis breakpoint distance.'}
+          </div>
+        </div>
+      </div>
+
+      <div class="finding-item">
+        <div class="finding-num">3</div>
+        <div class="finding-body">
+          <div class="finding-title">Rekomendasi</div>
+          <div class="finding-text">
+            ${gMetric.me !== null && gMetric.me > 5
+              ? `Model cenderung <b>over-predict</b> ${label} — pertimbangkan kalibrasi clutter loss atau penambahan NLOS correction factor.`
+              : gMetric.me !== null && gMetric.me < -5
+              ? `Model cenderung <b>under-predict</b> ${label} — pertimbangkan review tinggi antena efektif atau shadow fading margin.`
+              : `Akurasi model ${label} dalam batas wajar untuk model empiris stokastik tanpa kalibrasi lokasi <b>[ITU-R M.2135]</b>.`}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── UTILITY ───────────────────────────────────────────────────────────────────
+function showLoading(text='Memproses...') {
   hideLoading();
   const el = document.createElement('div');
-  el.className = 'loading-overlay';
-  el.id = 'loadingOverlay';
-  el.innerHTML = `<div class="loading-content"><div class="spinner"></div><p class="loading-text">${text}</p></div>`;
+  el.id='scOverlay'; el.className='loading-overlay';
+  el.innerHTML=`<div class="loading-box"><div class="spinner"></div><p class="loading-txt">${text}</p></div>`;
   document.body.appendChild(el);
 }
-
-function hideLoading() {
-  document.getElementById('loadingOverlay')?.remove();
+function hideLoading() { byId('scOverlay')?.remove(); }
+function setStatus(id, msg, type) {
+  const el = byId(id); if (!el) return;
+  el.textContent = msg;
+  el.className = `status-badge${type==='ok'?' uploaded':''}`;
 }
 
-console.log('Evaluation.js loaded — Spider mode, Site anchor, Distance from CSV');
+console.log('evaluation.js v4 — toggle sync fix | 5-range error | tinggi peta CSS');

@@ -10,75 +10,59 @@
 
 <header class="main-header">
   <h1>SIMULASI BERBASIS RUTE DRIVE TEST AKTUAL</h1>
-  <div class="header-badge">Hybrid Model v14 + PCI Match</div>
 </header>
 
 <section class="simulation-toolbar">
+
   <label class="btn-toolbar btn-upload-label" for="dtCsvInput">
-    📂 Upload CSV DT Aktual
+    Upload CSV
     <input type="file" id="dtCsvInput" accept=".csv,.txt,.gen" style="display:none;">
   </label>
+
   <div class="toolbar-divider"></div>
 
-  <!-- Mode toggle RSRP / PCI -->
-  <div class="mode-toggle-group">
-    <button id="btnModeRSRP" class="btn-mode active" onclick="setDtDisplayMode('rsrp')">📶 RSRP/SINR</button>
-    <button id="btnModePCI"  class="btn-mode"        onclick="setDtDisplayMode('pci')">🎨 PCI</button>
+  <button id="btnSimRSRP"      class="btn-toolbar btn-teal" disabled>Simulasi RSRP</button>
+  <button id="btnSimSINR"      class="btn-toolbar btn-teal" disabled>Simulasi SINR</button>
+  <button id="btnSimPCI"       class="btn-toolbar btn-teal" disabled>Simulasi PCI</button>
+  <button id="btnExportDtClean" class="btn-toolbar btn-green" disabled>Simpan DT Clean</button>
+
+  <div style="margin-left:auto;display:flex;gap:8px;">
+    <button id="btnDebugSite" class="btn-toolbar btn-debug">Debug</button>
+    <button id="btnBackToSim" class="btn-toolbar btn-back">Kembali</button>
   </div>
 
-  <button id="btnRunSimulation" class="btn-toolbar btn-run" disabled>▶ Jalankan Simulasi</button>
-  <div style="margin-left:auto;display:flex;gap:8px;">
-    <button id="btnDebugSite"  class="btn-toolbar btn-debug">🔍 Debug</button>
-    <button id="btnExportCSV"  class="btn-toolbar btn-export" disabled>💾 Export CSV</button>
-    <button id="btnBackToSim"  class="btn-toolbar btn-back">← Kembali</button>
-  </div>
 </section>
 
 <div class="dt-page-wrapper">
 
-  <!-- Kolom kiri: peta + tabel -->
   <div class="dt-left-col">
 
     <div class="simulation-map-wrapper">
-      <!-- Legend RSRP overlay -->
+
       <div id="dtLegend" class="rsrp-legend" style="display:none;">
-        <h4>RSRP Simulasi (dBm)</h4>
+        <h4 id="dtLegendTitle">RSRP Simulasi (dBm)</h4>
         <table>
           <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
           <tbody id="dtLegendBody"></tbody>
         </table>
       </div>
 
-      <!-- Legend PCI overlay -->
+      <div id="sinrLegend" class="rsrp-legend" style="display:none;">
+        <h4>SINR Simulasi (dB)</h4>
+        <table>
+          <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
+          <tbody id="sinrLegendBody"></tbody>
+        </table>
+      </div>
+
       <div id="pciLegend" class="pci-legend" style="display:none;">
         <h4>NR PCC Serving PCI</h4>
         <div id="pciLegendBody"></div>
       </div>
 
-      <!-- Map guide -->
-      <div id="mapGuide" class="map-guide-overlay">
-        <div class="map-guide-inner">
-          <div class="map-guide-icon">🔬</div>
-          <h3>Hybrid Simulation + PCI Matching</h3>
-          <p>
-            Gabungkan <strong>formula 3GPP TR 38.901</strong> dengan
-            <strong>kalibrasi empiris</strong> dari data aktual.<br><br>
-            PCI dari CSV DT akan dicocokkan dengan data shapefile untuk
-            visualisasi coverage per sektor.
-          </p>
-          <div class="map-guide-steps">
-            <div class="step-pill"><span class="pill-num">1</span> Site dari sesi</div>
-            <div class="step-pill"><span class="pill-num">2</span> Upload CSV DT</div>
-            <div class="step-pill"><span class="pill-num">3</span> Auto-kalibrasi</div>
-            <div class="step-pill"><span class="pill-num">4</span> PCI Match &amp; Sim</div>
-          </div>
-        </div>
-      </div>
-
       <div id="map-dt-sim"></div>
     </div>
 
-    <!-- Tabel NR Serving & Neighbor Cells — fix di bawah peta -->
     <div class="cell-info-panel" id="dtCellInfoPanel">
       <div class="cell-panel-header">
         <span id="dtCellPanelTitle">
@@ -86,7 +70,8 @@
           <span class="cell-panel-hint">— Klik titik simulasi di peta untuk detail</span>
         </span>
         <div class="cell-legend-pills" id="dtCellLegendPills">
-          <!-- diisi JS -->
+          <span class="line-pill" style="background:#00c050">Serving</span>
+          <span class="line-pill" style="background:#1a6fff">Detected</span>
         </div>
       </div>
       <div class="cell-table-wrapper" id="dtCellTableWrapper">
@@ -96,9 +81,8 @@
       </div>
     </div>
 
-  </div><!-- /dt-left-col -->
+  </div>
 
-  <!-- Kolom kanan: info panel -->
   <aside class="simulation-info">
 
     <div class="info-box">
@@ -122,7 +106,6 @@
         <tr><td>Panjang rute:</td>         <td><b id="infoRouteDist">—</b></td></tr>
         <tr><td>RSRP aktual:</td>          <td><b id="infoHasRSRP">—</b></td></tr>
         <tr><td>SINR aktual:</td>          <td><b id="infoHasSINR">—</b></td></tr>
-        <tr><td>PCI aktual:</td>           <td><b id="infoHasPCI">—</b></td></tr>
       </table>
       <div class="note-inline" style="margin-top:8px;">
         💡 Jarak dihitung otomatis dari lat/lng ke koordinat site.
@@ -137,23 +120,38 @@
         <tr><td>Koordinat:</td>       <td><b id="dispSiteCoord">—</b></td></tr>
         <tr><td>Tinggi Antena:</td>   <td><b id="dispSiteHeight">—</b></td></tr>
         <tr><td>Sektor:</td>          <td><b id="dispSiteSectors">—</b></td></tr>
-        <tr><td>Model Propagasi:</td> <td><b id="dispSiteModel">—</b></td></tr>
         <tr><td>Clutter:</td>         <td><b id="dispSiteClutter">—</b></td></tr>
       </table>
     </div>
 
-    <div class="info-box">
-      <h3>🔬 KALIBRASI EMPIRIS</h3>
-      <p id="modelStatus" class="status-msg status-info">Menunggu CSV + site...</p>
+    <div class="info-box" id="propagasiOverrideBox">
+      <h3>⚙️ OVERRIDE PROPAGASI</h3>
+      <p class="status-msg status-info" id="overrideStatus">Menunggu site terdeteksi...</p>
       <table class="mini-info-table" style="margin-top:8px;">
-        <tr><td>Data kalibrasi:</td>    <td><b id="infoCalibN">—</b> titik</td></tr>
-        <tr><td>Bias koreksi:</td>      <td><b id="infoCalibBias">—</b></td></tr>
-        <tr><td>Residual σ:</td>        <td><b id="infoCalibStd">—</b></td></tr>
-        <tr><td>RMSE before→after:</td> <td><b id="infoCalibRmse">—</b></td></tr>
-        <tr><td>R² SINR model:</td>     <td><b id="infoSinrR2">—</b></td></tr>
-        <tr><td>Global Gain G:</td>     <td><b id="infoGlobalGain">—</b></td></tr>
-        <tr><td>PCI matched:</td>       <td><b id="infoPCIMatched">—</b></td></tr>
+        <tr>
+          <td>Skenario</td>
+          <td>
+            <select id="overrideScenario" class="field-control-sm" disabled>
+              <option value="uma">UMa — Macro</option>
+              <option value="umi">UMi — Micro</option>
+              <option value="rma">RMa — Rural</option>
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td>Kondisi</td>
+          <td>
+            <select id="overrideCondition" class="field-control-sm" disabled>
+              <option value="nlos">NLOS</option>
+              <option value="los">LOS</option>
+              <option value="mixed">Mixed</option>
+            </select>
+          </td>
+        </tr>
       </table>
+      <div id="overrideBadge" class="override-badge" style="display:none;">
+        ⚠️ Override aktif — berbeda dari site index
+      </div>
     </div>
 
     <div class="info-box">
@@ -169,6 +167,10 @@
     </div>
 
     <div id="resultBox" class="info-box result-box" style="display:none;"></div>
+
+    <button id="btnExportCSV" class="btn-export-panel" disabled>
+      💾 Export Data CSV
+    </button>
 
   </aside>
 </div>

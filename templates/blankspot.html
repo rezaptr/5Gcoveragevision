@@ -1,0 +1,222 @@
+{% extends "base_app.html" %}
+{% block title %}Blank Spot Optimizer — 5G Coverage{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/blankspot.css') }}">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+{% endblock %}
+
+{% block content %}
+<header class="bso-header">
+  <div class="bso-header-left">
+    <a href="/coverage"></a>
+    <h1>BLANK SPOT OPTIMIZER</h1>
+  </div>
+</header>
+
+<div class="bso-container">
+
+  <!-- AREA PETA — Before & After side by side -->
+  <div class="bso-maps-area">
+
+    <!-- Before -->
+    <div class="bso-map-wrapper">
+      <div class="bso-map-label before-label">🗼 BEFORE — Coverage Existing</div>
+      <div id="bsoMapBefore" class="bso-map"></div>
+      <div id="bsoLegendBefore" class="bso-map-legend" style="display:none;">
+        <div class="bso-legend-title">RSRP (dBm)</div>
+        <table><tbody id="bsoLegendBeforeBody"></tbody></table>
+      </div>
+      <div id="bsoBeforeStats" class="bso-map-stats"></div>
+    </div>
+
+    <!-- After -->
+    <div class="bso-map-wrapper">
+      <div class="bso-map-label after-label">📡 AFTER — + Site Baru</div>
+      <div id="bsoMapAfter" class="bso-map"></div>
+      <div id="bsoLegendAfter" class="bso-map-legend" style="display:none;">
+        <div class="bso-legend-title">RSRP (dBm)</div>
+        <table><tbody id="bsoLegendAfterBody"></tbody></table>
+      </div>
+      <div id="bsoAfterStats" class="bso-map-stats"></div>
+    </div>
+
+  </div><!-- /bso-maps-area -->
+
+  <!-- PANEL KANAN -->
+  <div class="bso-side-panel">
+
+    <!-- Gap info -->
+    <div class="bso-card">
+      <div class="bso-card-title"><i class="fas fa-exclamation-circle"></i> Info Gap</div>
+      <div id="bsoGapInfo">
+        <div class="bso-loading-placeholder">Memuat data gap...</div>
+      </div>
+    </div>
+
+    <!-- Tampilan -->
+    <div class="bso-card">
+      <div class="bso-card-title"><i class="fas fa-eye"></i> Tampilan</div>
+      <div class="bso-viz-group">
+        <button id="btnRSRPGap" class="bso-viz-btn active"><i class="fas fa-signal"></i> RSRP</button>
+        <button id="btnSINRGap" class="bso-viz-btn"><i class="fas fa-broadcast-tower"></i> SINR</button>
+      </div>
+    </div>
+
+    <!-- Lokasi site baru -->
+    <div class="bso-card">
+      <div class="bso-card-title"><i class="fas fa-map-marker-alt"></i> Lokasi Site Baru</div>
+      <p class="bso-hint" style="margin-bottom:8px;">💡 Klik di peta kanan (After) untuk menempatkan site baru, atau isi koordinat manual.</p>
+      <div class="bso-loc-grid">
+        <div>
+          <label class="bso-label">Latitude</label>
+          <input type="number" id="latSite" class="bso-input" placeholder="-6.208800" step="0.000001">
+        </div>
+        <div>
+          <label class="bso-label">Longitude</label>
+          <input type="number" id="lngSite" class="bso-input" placeholder="106.845600" step="0.000001">
+        </div>
+      </div>
+      <button id="btnSetSiteLoc" class="bso-btn primary" style="width:100%;margin-top:8px;">
+        <i class="fas fa-map-pin"></i> Set Lokasi
+      </button>
+      <div id="bsoSiteLocInfo" style="font-size:11px;color:#1F3C88;margin-top:6px;font-weight:600;"></div>
+    </div>
+
+    <!-- Parameter Simulasi (collapsible) -->
+    <div class="bso-card">
+      <div class="bso-card-title">
+        <span><i class="fas fa-th"></i> Parameter Simulasi</span>
+        <button id="btnToggleSim" class="bso-collapse-btn">▼</button>
+      </div>
+      <div class="bso-badge-row">
+        <span class="bso-badge-pill" id="bBadgeSector">3 Sek</span>
+        <span class="bso-badge-pill" id="bBadgeH">30m</span>
+        <span class="bso-badge-pill" id="bBadgeGrid">50m</span>
+        <span class="bso-badge-pill" id="bBadgeRadius">300m</span>
+      </div>
+      <div id="simBodyBso" class="bso-collapse-body">
+        <div class="bso-param-grid" style="margin-top:10px;">
+          <div>
+            <label class="bso-label">Jumlah Sektor</label>
+            <select id="sectorCountGap" class="bso-input">
+              <option value="1">1 (Omni)</option>
+              <option value="2">2 Sektor</option>
+              <option value="3" selected>3 Sektor</option>
+              <option value="4">4 Sektor</option>
+            </select>
+          </div>
+          <div>
+            <label class="bso-label">Tinggi Antena (m)</label>
+            <input type="number" id="antennaGap" class="bso-input" value="30" min="10" max="120" step="5">
+          </div>
+          <div>
+            <label class="bso-label">Grid Size</label>
+            <select id="gridGap" class="bso-input">
+              <option value="25">25 m</option>
+              <option value="50" selected>50 m</option>
+              <option value="100">100 m</option>
+            </select>
+          </div>
+          <div>
+            <label class="bso-label">Radius Analisis (m)</label>
+            <input type="number" id="radiusGap" class="bso-input" value="300" min="100" max="1000" step="50">
+          </div>
+        </div>
+        <div id="azimuthsGap" class="bso-azimuth-grid" style="margin-top:9px;"></div>
+        <p class="bso-hint">Azimuth Sektor 1 diarahkan otomatis ke centroid gap.</p>
+      </div>
+    </div>
+
+    <!-- Model Propagasi (collapsible) -->
+    <div class="bso-card">
+      <div class="bso-card-title">
+        <span><i class="fas fa-sliders-h"></i> Model Propagasi</span>
+        <button id="btnToggleProp" class="bso-collapse-btn">▶</button>
+      </div>
+      <div class="bso-badge-row">
+        <span class="bso-badge-pill" id="bBadgeSc">UMa NLOS</span>
+        <span class="bso-badge-pill" id="bBadgeClutter">Urban</span>
+        <span class="bso-badge-pill" id="bBadgeTx">46 dBm</span>
+        <span class="bso-badge-pill" id="bBadgeFreq">2300 MHz</span>
+      </div>
+      <div id="propBodyBso" class="bso-collapse-body" style="display:none;">
+        <div class="bso-param-grid" style="margin-top:10px;">
+          <div>
+            <label class="bso-label">Skenario</label>
+            <select id="scenarioGap" class="bso-input">
+              <option value="uma" selected>UMa</option>
+              <option value="umi">UMi</option>
+              <option value="rma">RMa</option>
+            </select>
+          </div>
+          <div>
+            <label class="bso-label">Kondisi</label>
+            <select id="conditionGap" class="bso-input">
+              <option value="nlos" selected>NLOS</option>
+              <option value="los">LOS</option>
+              <option value="los_nlos">Mixed</option>
+            </select>
+          </div>
+          <div>
+            <label class="bso-label">TX Power (dBm)</label>
+            <input type="number" id="txGap" class="bso-input" value="46" min="20" max="60">
+          </div>
+          <div>
+            <label class="bso-label">Frekuensi (MHz)</label>
+            <input type="number" id="freqGap" class="bso-input" value="2300" min="700" max="28000" step="100">
+          </div>
+          <div>
+            <label class="bso-label">Bandwidth (MHz)</label>
+            <input type="number" id="bsoGap" class="bso-input" value="20" min="5" max="100" step="5">
+          </div>
+          <div>
+            <label class="bso-label">Clutter</label>
+            <select id="clutterGap" class="bso-input">
+              <option value="urban" selected>Urban</option>
+              <option value="dense_urban">Dense Urban</option>
+              <option value="suburban">Suburban</option>
+              <option value="rural">Rural</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Run button -->
+    <button id="btnRunBSO" class="bso-btn run">
+      <i class="fas fa-play"></i> Jalankan Optimalisasi
+    </button>
+
+    <!-- Delta panel -->
+    <div id="bsoDeltaPanel" class="bso-card" style="display:none;"></div>
+
+    <!-- Reset -->
+    <button id="btnClearBSO" class="bso-btn danger" style="width:100%;">
+      <i class="fas fa-redo"></i> Reset Halaman
+    </button>
+
+  </div><!-- /bso-side-panel -->
+
+</div><!-- /bso-container -->
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ url_for('static', filename='js/blankspot.js') }}"></script>
+<script>
+  document.getElementById('btnToggleSim')?.addEventListener('click', () => {
+    const body = document.getElementById('simBodyBso');
+    const btn  = document.getElementById('btnToggleSim');
+    const open = body.style.display === 'none';
+    body.style.display = open ? 'block' : 'none';
+    btn.textContent = open ? '▼' : '▶';
+  });
+  document.getElementById('btnToggleProp')?.addEventListener('click', () => {
+    const body = document.getElementById('propBodyBso');
+    const btn  = document.getElementById('btnToggleProp');
+    const open = body.style.display === 'none';
+    body.style.display = open ? 'block' : 'none';
+    btn.textContent = open ? '▼' : '▶';
+  });
+</script>
+{% endblock %}

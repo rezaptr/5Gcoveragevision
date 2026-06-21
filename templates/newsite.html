@@ -1,7 +1,5 @@
 {% extends "base_app.html" %}
-
 {% block title %}Perencanaan Site Baru 5G{% endblock %}
-
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/newsite.css') }}">
@@ -10,334 +8,276 @@
 
 {% block content %}
 
-<!-- MAIN HEADER -->
+<!-- Header identik coverage -->
 <header class="main-header">
   <h1>PERENCANAAN SITE BARU 5G — COVERAGE PREDICTION</h1>
 </header>
 
-<!-- TOOLBAR -->
-<section class="newsite-toolbar">
-  <div class="toolbar-info">
-    <i class="fas fa-hand-pointer"></i>
-    <span>Klik pada peta atau masukkan koordinat untuk menentukan lokasi site baru</span>
+<!-- Toolbar tipis (agar height calc sama dengan coverage) -->
+<section class="coverage-toolbar">
+  <div class="toolbar-info" style="display:flex;align-items:center;gap:8px;color:#6b7399;font-size:12.5px;">
+    <i class="fas fa-hand-pointer" style="color:#1F3C88;font-size:15px;"></i>
+    <span>Klik peta untuk menempatkan site baru</span>
   </div>
-  <button id="clearSiteBtn" class="toolbar-btn btn-danger" style="display:none;">
-    <i class="fas fa-trash"></i> Clear Site
-  </button>
+  <span id="siteCountBadge" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:5px;border:1.5px solid #e2e6f0;background:#f4f6fb;color:#6b7399;"></span>
+  <span id="neighbourBadge" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:5px;border:1.5px solid #e2e6f0;background:#f4f6fb;color:#1F3C88;display:none;"></span>
 </section>
 
-<!-- MAIN LAYOUT -->
-<div class="newsite-container">
+<div class="coverage-container">
 
-  <!-- LEFT — MAP -->
+  <!-- PETA — sama persis class dengan coverage -->
   <div class="map-panel">
-    <div id="newsiteMap"></div>
-
-    <!-- Instruction Overlay -->
-    <div id="mapInstructions" class="map-instructions">
+    <div id="pureMap" style="width:100%;height:100%;cursor:crosshair;"></div>
+    <div id="pureInstructions" class="map-instructions-overlay">
       <div class="instruction-content">
         <i class="fas fa-map-marker-alt"></i>
-        <p>Klik peta untuk menempatkan site</p>
-        <small>atau masukkan koordinat di panel kanan</small>
+        <p>Klik peta untuk menempatkan site baru</p>
+        <small>SINR dihitung dengan site existing sebagai interferer</small>
       </div>
     </div>
-
-    <!-- Legend Overlay -->
-    <div id="mapLegend" class="map-legend" style="display:none;">
-      <h4 id="legendTitle">RSRP (dBm)</h4>
+    <div id="pureMapLegend" class="map-legend" style="display:none;">
+      <h4 id="pureLegendTitle">RSRP (dBm)</h4>
       <table>
-        <thead>
-          <tr>
-            <th></th>
-            <th>Rentang</th>
-            <th>Kategori</th>
-            <th>%</th>
-          </tr>
-        </thead>
-        <tbody id="legendTableBody"></tbody>
+        <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
+        <tbody id="pureLegendBody"></tbody>
       </table>
     </div>
   </div>
 
-  <!-- RIGHT — PANEL -->
+  <!-- PANEL KANAN — identik structure coverage -->
   <div class="analysis-panel">
+    <h2 class="panel-heading">Parameter &amp; Hasil Analisis</h2>
 
-    <!-- Sticky Header -->
-    <div class="panel-header">
-      <h2>Konfigurasi &amp; Analisis Site</h2>
-      <p class="subtitle">Atur parameter antena, propagasi, dan visualisasikan coverage prediksi</p>
+    <!-- BLOK 1: TAMPILAN -->
+    <div class="panel-card">
+      <div class="panel-card-title"><i class="fas fa-eye"></i> Tampilan</div>
+      <div class="viz-button-group">
+        <button id="btnRSRP" class="viz-btn active"><i class="fas fa-signal"></i> RSRP</button>
+        <button id="btnSINR" class="viz-btn"><i class="fas fa-broadcast-tower"></i> SINR</button>
+      </div>
     </div>
 
-    <div class="panel-body">
-
-      <!-- Mode Badge -->
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-        <span id="planningModeBadge">✏️ Manual Mode</span>
-      </div>
-
-      <!-- Gap Context Panel (Gap-Guided Only) -->
-      <div id="gapContextPanel" style="display:none;"></div>
-
-      <!-- Manual Mode Hint -->
-      <div id="manualModeHint" class="analysis-info" style="font-size:11.5px; margin-bottom:12px;">
-        <i class="fas fa-pencil-alt" style="margin-right:6px;"></i>
-        <b>Mode Manual</b> — Pilih lokasi bebas di peta atau masukkan koordinat.
-      </div>
-
-      <!-- ═══════════════════════════════════════════ -->
-      <!-- SECTION 1: LOKASI SITE                     -->
-      <!-- ═══════════════════════════════════════════ -->
-      <div class="section-label">
-        <i class="fas fa-map-marker-alt"></i>
-        Lokasi Site
-      </div>
-
-      <div class="control-card">
-        <div class="location-input-group">
-          <div class="control-group">
-            <label>Latitude</label>
-            <input type="number" id="siteLatitude" placeholder="-6.208800" step="0.000001" min="-90" max="90">
-          </div>
-          <div class="control-group">
-            <label>Longitude</label>
-            <input type="number" id="siteLongitude" placeholder="106.845600" step="0.000001" min="-180" max="180">
-          </div>
-          <button id="setSiteLocationBtn" class="set-location-btn">
-            <i class="fas fa-map-pin"></i> Set Lokasi di Peta
-          </button>
+    <!-- BLOK 2: LOKASI -->
+    <div class="panel-card">
+      <div class="panel-card-title"><i class="fas fa-map-marker-alt"></i> Lokasi Site</div>
+      <div class="field-row">
+        <div class="field-col">
+          <label class="field-label">Latitude</label>
+          <input type="number" id="latPure" class="field-control" placeholder="-6.208800" step="0.000001">
         </div>
-        <div class="current-location" id="currentLocation" style="display:none;">
-          <i class="fas fa-check-circle"></i>
-          <span id="locationText">Site belum ditentukan</span>
+        <div class="field-col">
+          <label class="field-label">Longitude</label>
+          <input type="number" id="lngPure" class="field-control" placeholder="106.845600" step="0.000001">
         </div>
       </div>
-
-      <!-- ═══════════════════════════════════════════ -->
-      <!-- SECTION 2: KONFIGURASI ANTENA              -->
-      <!-- ═══════════════════════════════════════════ -->
-      <div class="section-label">
-        <i class="fas fa-broadcast-tower"></i>
-        Konfigurasi Antena
+      <button id="btnSetLoc" class="toolbar-btn" style="width:100%;justify-content:center;margin-top:6px;">
+        <i class="fas fa-map-pin"></i> Set Lokasi di Peta
+      </button>
+      <div id="currentLocPure" class="pure-loc-confirm" style="display:none;">
+        <i class="fas fa-check-circle"></i><span></span>
       </div>
+    </div>
 
-      <div class="control-card">
-
-        <div class="control-group">
-          <label>Jumlah Sektor</label>
-          <select id="sectorCount">
-            <option value="1">1 Sektor (Omni)</option>
-            <option value="2">2 Sektor</option>
-            <option value="3" selected>3 Sektor</option>
-            <option value="4">4 Sektor</option>
-            <option value="6">6 Sektor</option>
-          </select>
-        </div>
-
-        <!-- Azimuth inputs (dynamic) -->
-        <div id="azimuthInputs" class="azimuth-inputs"></div>
-
-        <!-- Gap-Guided Buttons -->
-        <div class="gap-action-row">
-          <button id="btnSuggestAzimuth">🧭 Suggest Azimuth</button>
-          <button id="btnResetManual">✕ Reset ke Manual</button>
-        </div>
-
-        <div class="param-divider"></div>
-
-        <div class="control-group">
-          <label>Tinggi Antena</label>
-          <div class="height-control">
-            <div class="input-with-unit">
-              <input type="number" id="antennaHeight" value="30" min="10" max="120" step="5">
-              <span class="unit-tag">meter</span>
-            </div>
-            <span class="height-badge" id="heightBadge">30m</span>
-          </div>
-          <small class="help-text">↑ Makin tinggi → path loss berkurang → RSRP lebih baik</small>
-        </div>
-
-        <div class="control-group">
-          <label>Antenna Beamwidth (horizontal)</label>
-          <div class="model-display">
-            <span class="label">Nilai tetap</span>
-            <span class="value">35°</span>
-          </div>
-          <small class="help-text">Beamwidth horizontal per sektor (fixed 3-sector pattern)</small>
-        </div>
-
-      </div><!-- /control-card antena -->
-
-      <!-- ═══════════════════════════════════════════ -->
-      <!-- SECTION 3: PARAMETER RF (Frontend Control) -->
-      <!-- ═══════════════════════════════════════════ -->
-      <div class="section-label">
-        <i class="fas fa-sliders-h"></i>
-        Parameter RF
+    <!-- BLOK 3: PARAMETER SIMULASI (collapsible) -->
+    <div class="panel-card">
+      <div class="panel-card-title">
+        <span><i class="fas fa-th"></i> Parameter Simulasi</span>
+        <button id="btnToggleSim" class="btn-collapse" title="Tampilkan / sembunyikan">
+          <span id="simToggleIcon">▼</span>
+        </button>
       </div>
-
-      <!-- Clutter & Propagation -->
-      <div class="control-card">
-
-        <div class="control-group">
-          <label>Tipe Lingkungan (Clutter)</label>
-          <select id="clutterSelect">
-            <option value="urban" selected>Urban</option>
-            <option value="dense_urban">Dense Urban</option>
-            <option value="metropolitan">Metropolitan</option>
-            <option value="sub_urban">Sub Urban</option>
-            <option value="rural">Rural</option>
-          </select>
-          <small class="help-text">Menentukan skenario 3GPP TR 38.901 yang digunakan</small>
-        </div>
-
-        <div class="control-group">
-          <label>Model Propagasi Aktif</label>
-          <div class="model-display">
-            <span class="label">Model</span>
-            <span class="value" id="paramModel">UMA NLOS</span>
+      <!-- Badge ringkasan selalu terlihat -->
+      <div class="rf-badge-row">
+        <span class="rf-badge-pill" id="badgeSector">3 Sektor</span>
+        <span class="rf-badge-pill" id="badgeH">30m</span>
+        <span class="rf-badge-pill" id="badgeGrid">50m grid</span>
+        <span class="rf-badge-pill" id="badgeRadius">500m</span>
+      </div>
+      <!-- Body collapsible — terbuka by default -->
+      <div id="simBody" class="rf-panel-body">
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">Jumlah Sektor</label>
+            <select id="sectorCountPure" class="field-control">
+              <option value="1">1 (Omni)</option>
+              <option value="2">2 Sektor</option>
+              <option value="3" selected>3 Sektor</option>
+              <option value="4">4 Sektor</option>
+              <option value="6">6 Sektor</option>
+            </select>
           </div>
-        </div>
-
-        <div class="param-divider"></div>
-
-        <!-- Tipe Coverage Visualization -->
-        <div class="control-group">
-          <label>Tipe Coverage</label>
-          <div class="viz-button-group">
-            <button id="visualizeRSRP" class="viz-btn-compact active">
-              <i class="fas fa-signal"></i> RSRP
-            </button>
-            <button id="visualizeSINR" class="viz-btn-compact">
-              <i class="fas fa-broadcast-tower"></i> SINR
-            </button>
-          </div>
-        </div>
-
-      </div><!-- /control-card propagasi -->
-
-      <!-- Parameter RF: 4 param utama, inline, no collapsible -->
-      <div class="control-card">
-        <div class="param-grid">
-          <div class="control-group">
-            <label>TX Power</label>
-            <div class="input-with-unit">
-              <input type="number" id="txPower" value="46" min="20" max="60" step="1">
-              <span class="unit-tag">dBm</span>
-            </div>
-          </div>
-          <div class="control-group">
-            <label>Frekuensi</label>
-            <div class="input-with-unit">
-              <input type="number" id="frequency" value="2300" min="700" max="28000" step="100">
-              <span class="unit-tag">MHz</span>
-            </div>
-          </div>
-          <div class="control-group">
-            <label>Bandwidth</label>
-            <div class="input-with-unit">
-              <input type="number" id="bandwidth" value="20" min="5" max="100" step="5">
-              <span class="unit-tag">MHz</span>
-            </div>
-          </div>
-          <div class="control-group">
-            <label>Tinggi UE</label>
-            <div class="input-with-unit">
-              <input type="number" id="mobileH" value="1.5" min="0.5" max="3" step="0.5">
-              <span class="unit-tag">m</span>
+          <div class="field-col">
+            <label class="field-label">Tinggi Antena</label>
+            <div class="input-suffix-wrap">
+              <input type="number" id="antennaHeightPure" class="field-control" value="30" min="10" max="120" step="5">
+              <span class="input-suffix">m</span>
             </div>
           </div>
         </div>
-
-        <!-- hidden inputs agar getCAL() tetap bisa baca nilai statis -->
-        <input type="hidden" id="antennaAm"    value="15">
-        <input type="hidden" id="clutterRefM"  value="100">
-        <input type="hidden" id="clutterCoef"  value="3.5">
-        <input type="hidden" id="sinrGoodBase" value="20">
-        <input type="hidden" id="sinrGoodStd"  value="5.5">
-        <input type="hidden" id="sinrBadBase"  value="6">
-        <input type="hidden" id="sinrBadStd"   value="4.5">
-      </div>
-
-      <!-- ═══════════════════════════════════════════ -->
-      <!-- SECTION 4: PARAMETER SIMULASI              -->
-      <!-- ═══════════════════════════════════════════ -->
-      <div class="section-label">
-        <i class="fas fa-th"></i>
-        Parameter Simulasi
-      </div>
-
-      <div class="control-card">
-        <div class="param-grid">
-          <div class="control-group">
-            <label>Grid Size</label>
-            <select id="gridSize">
-              <option value="10">10 m</option>
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">Grid Size</label>
+            <select id="gridPure" class="field-control">
               <option value="25">25 m</option>
               <option value="50" selected>50 m</option>
               <option value="100">100 m</option>
-              <option value="150">150 m</option>
             </select>
-            <small class="help-text">Resolusi grid simulasi</small>
           </div>
-          <div class="control-group">
-            <label>Radius Coverage</label>
-            <div class="input-with-unit">
-              <input type="number" id="coverageRadius" value="500" min="100" max="2000" step="50">
-              <span class="unit-tag">m</span>
+          <div class="field-col">
+            <label class="field-label">Radius Coverage</label>
+            <div class="input-suffix-wrap">
+              <input type="number" id="radiusPure" class="field-control" value="500" min="100" max="2000" step="50">
+              <span class="input-suffix">m</span>
             </div>
-            <small class="help-text">Batas radius analisis</small>
           </div>
         </div>
+        <!-- Azimuth inputs -->
+        <div id="azimuthsPure" class="pure-azimuth-grid" style="margin-top:8px;"></div>
       </div>
+    </div>
 
-      <!-- ═══════════════════════════════════════════ -->
-      <!-- SECTION 5: HASIL PREDIKSI                  -->
-      <!-- ═══════════════════════════════════════════ -->
-      <div class="section-label">
-        <i class="fas fa-chart-line"></i>
-        Hasil Prediksi Coverage
+    <!-- BLOK 5: MODEL PROPAGASI (collapsible seperti RF panel) -->
+    <div class="panel-card">
+      <div class="panel-card-title">
+        <span><i class="fas fa-sliders-h"></i> Model Propagasi</span>
+        <button id="btnToggleProp" class="btn-collapse" title="Tampilkan / sembunyikan">
+          <span id="propToggleIcon">▶</span>
+        </button>
       </div>
-
-      <div class="stats-card">
-        <div id="analysisResult" class="analysis-content">
-          <div class="waiting-state">
-            <i class="fas fa-hand-pointer"></i>
-            <p>Tentukan lokasi site untuk melihat prediksi coverage</p>
+      <!-- Badge ringkasan -->
+      <div class="rf-badge-row">
+        <span class="rf-badge-pill" id="badgeSc">UMa NLOS</span>
+        <span class="rf-badge-pill" id="badgeClutterPure">Urban</span>
+        <span class="rf-badge-pill" id="badgeFreqPure">2300 MHz</span>
+        <span class="rf-badge-pill" id="badgeTxPure">46 dBm</span>
+      </div>
+      <!-- Body collapsible -->
+      <div id="propBody" class="rf-panel-body" style="display:none;">
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">Skenario</label>
+            <select id="scenarioPure" class="field-control">
+              <option value="uma" selected>UMa — Macro</option>
+              <option value="umi">UMi — Micro</option>
+              <option value="rma">RMa — Rural</option>
+            </select>
+          </div>
+          <div class="field-col">
+            <label class="field-label">Kondisi</label>
+            <select id="conditionPure" class="field-control">
+              <option value="nlos" selected>NLOS</option>
+              <option value="los">LOS</option>
+              <option value="los_nlos">Mixed</option>
+            </select>
           </div>
         </div>
-      </div>
-
-      <!-- Statistik -->
-      <div class="detailed-stats">
-        <h3><i class="fas fa-chart-pie"></i> Statistik Coverage</h3>
-        <div class="stats-grid">
-          <div class="stat-box">
-            <label>Total Area</label>
-            <span id="totalArea">0 km²</span>
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">TX Power</label>
+            <select id="txPure" class="field-control">
+              <option value="43">43 dBm</option>
+              <option value="46" selected>46 dBm</option>
+              <option value="49">49 dBm</option>
+            </select>
           </div>
-          <div class="stat-box excellent">
-            <label>Excellent (S1)</label>
-            <span id="excellentCoverage">0%</span>
-          </div>
-          <div class="stat-box good">
-            <label>Good (S2)</label>
-            <span id="goodCoverage">0%</span>
-          </div>
-          <div class="stat-box poor">
-            <label>Poor / Bad</label>
-            <span id="poorCoverage">0%</span>
+          <div class="field-col">
+            <label class="field-label">Frekuensi</label>
+            <select id="freqPure" class="field-control">
+              <option value="700">700 MHz</option>
+              <option value="2100">2100 MHz</option>
+              <option value="2300" selected>2300 MHz</option>
+              <option value="2600">2600 MHz</option>
+            </select>
           </div>
         </div>
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">Bandwidth</label>
+            <select id="bwPure" class="field-control">
+              <option value="10">10 MHz</option>
+              <option value="20" selected>20 MHz</option>
+              <option value="30">30 MHz</option>
+              <option value="50">50 MHz</option>
+              <option value="100">100 MHz</option>
+            </select>
+          </div>
+          <div class="field-col">
+            <label class="field-label">Clutter</label>
+            <select id="clutterPure" class="field-control">
+              <option value="dense_urban">Dense Urban</option>
+              <option value="urban" selected>Urban</option>
+              <option value="suburban">Suburban</option>
+              <option value="rural">Rural</option>
+            </select>
+          </div>
+        </div>
+        <p class="rf-note">Ubah nilai dropdown → coverage diperbarui otomatis.</p>
       </div>
+    </div>
 
-    </div><!-- /panel-body -->
+    <!-- BLOK 6: HASIL PREDIKSI -->
+    <div class="panel-card">
+      <div class="panel-card-title"><i class="fas fa-chart-line"></i> Hasil Prediksi Coverage</div>
+      <div id="pureResult" class="analysis-content">
+        <div class="waiting-state">
+          <i class="fas fa-hand-pointer"></i>
+          <p>Klik peta untuk memulai prediksi</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- BLOK 7: STATISTIK -->
+    <div class="panel-card">
+      <div class="panel-card-title"><i class="fas fa-chart-pie"></i> Statistik Coverage</div>
+      <div class="stats-grid">
+        <div class="stat-box">
+          <span class="stat-label">Total Area</span>
+          <span class="stat-value" id="pureTotalArea">0 km²</span>
+        </div>
+        <div class="stat-box stat-excellent">
+          <span class="stat-label">Excellent</span>
+          <span class="stat-value" id="pureExcellent">0%</span>
+        </div>
+        <div class="stat-box stat-good">
+          <span class="stat-label">Good</span>
+          <span class="stat-value" id="pureGood">0%</span>
+        </div>
+        <div class="stat-box stat-poor">
+          <span class="stat-label">Poor / Bad</span>
+          <span class="stat-value" id="purePoor">0%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clear -->
+    <button id="btnClear" class="btn-clear-site" style="display:none;width:100%;padding:10px;font-size:13px;border-radius:7px;">
+      <i class="fas fa-trash"></i> Hapus Site &amp; Reset
+    </button>
+
   </div><!-- /analysis-panel -->
 
-</div><!-- /newsite-container -->
-
+</div><!-- /coverage-container -->
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="{{ url_for('static', filename='js/newsite.js') }}"></script>
+<script>
+  // Toggle Parameter Simulasi (default terbuka)
+  document.getElementById('btnToggleSim')?.addEventListener('click', () => {
+    const body = document.getElementById('simBody');
+    const icon = document.getElementById('simToggleIcon');
+    const open = body.style.display === 'none';
+    body.style.display = open ? 'block' : 'none';
+    icon.textContent = open ? '▼' : '▶';
+  });
+  // Toggle Model Propagasi (default tertutup)
+  document.getElementById('btnToggleProp')?.addEventListener('click', () => {
+    const body = document.getElementById('propBody');
+    const icon = document.getElementById('propToggleIcon');
+    const open = body.style.display === 'none';
+    body.style.display = open ? 'block' : 'none';
+    icon.textContent = open ? '▼' : '▶';
+  });
+</script>
 {% endblock %}

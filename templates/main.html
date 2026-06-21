@@ -6,7 +6,6 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
 {% endblock %}
 
 {% block content %}
@@ -14,26 +13,19 @@
 <!-- ================= HEADER ================= -->
 <header class="main-header">
   <div class="header-left">
-    <h1>5G DRIVE TEST SYSTEM</h1>
+    <h1>5G COVERAGE VISION</h1>
   </div>
-
   <div class="main-user">
     <a href="{{ url_for('profile') }}" class="user-info">
-
-      <!-- AVATAR -->
       {% if session.get('profile_image') %}
         <img src="{{ url_for('static', filename='uploads/' + session.get('profile_image')) }}?v={{ range(1,1000)|random }}" class="avatar-nav">
       {% else %}
-        <img src="https://ui-avatars.com/api/?name={{ session.get('full_name', 'User') }}&background=1890ff&color=fff"
-             class="avatar-nav">
+        <img src="https://ui-avatars.com/api/?name={{ session.get('full_name', 'User') }}&background=1890ff&color=fff" class="avatar-nav">
       {% endif %}
-
-      <!-- NAMA -->
       <span>
         Selamat Datang,<br>
         <strong>{{ session.get('full_name', 'User') }}</strong>
       </span>
-
     </a>
   </div>
 </header>
@@ -41,54 +33,192 @@
 <!-- ================= MAIN CONTENT ================= -->
 <div class="dashboard-container">
   <main class="main-content">
-    
+
+    <!-- SECTION HEADER -->
     <section class="content-header">
       <h2>MENU <span class="highlight">SIMULASI</span></h2>
-      <p>Silahkan pilih fitur di bawah ini untuk memulai simulasi dan analisis jaringan 5G Anda.</p>
+      <p>Pilih fitur di bawah ini untuk memulai simulasi dan analisis jaringan 5G Anda.</p>
     </section>
 
-    <section class="feature-grid">
+    <!-- STAT CARDS -->
+    <section class="stat-row">
+      <div class="stat-card">
+        <div class="stat-label">Total Menu</div>
+        <div class="stat-value">8</div>
+        <div class="stat-sub">Fitur tersedia</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Simulasi</div>
+        <div class="stat-value">3</div>
+        <div class="stat-sub">Drive Test & Coverage</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Validasi</div>
+        <div class="stat-value">2</div>
+        <div class="stat-sub">Real vs Simulasi</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Planning</div>
+        <div class="stat-value">2</div>
+        <div class="stat-sub">Rute & Site Baru</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Evaluation</div>
+        <div class="stat-value">1</div>
+        <div class="stat-sub">Kualitas Layanan</div>
+      </div>
+    </section>
+
+    <!-- ===== PERENCANAAN ===== -->
+    <div class="group-divider">
+      <span class="group-label">Perencanaan</span>
+      <span class="group-count">2 fitur</span>
+      <div class="group-line"></div>
+    </div>
+
+    <section class="feature-grid grid-2">
 
       <div class="feature-card">
-        <div class="card-icon">01</div>
-        <h3>Perencanaan Rute</h3>
-        <p>Optimasi rute pengambilan data lapangan secara sistematis, tersedia fitur export File KML.</p>
-        <a href="{{ url_for('route') }}" class="btn-action">MULAI</a>
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">01</div>
+            <span class="card-tag tag-planning">Planning</span>
+          </div>
+          <h3>Perencanaan Rute</h3>
+          <p>Buat rute drive test secara otomatis berdasarkan shapefile site. Tersedia informasi rute (jarak, waktu, kecepatan rata-rata) dan ekspor sebagai file KML untuk acuan di lapangan.</p>
+          <a href="{{ url_for('route') }}" class="btn-action">MULAI</a>
+        </div>
       </div>
 
       <div class="feature-card">
-        <div class="card-icon">02</div>
-        <h3>Simulasi Drive Test</h3>
-        <p>Estimasi nilai parameter radio (RSRP dan SINR) di sepanjang rute simulasi drive test.</p>
-        <a href="{{ url_for('drivetest') }}" class="btn-action">MULAI</a>
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">09</div>
+            <span class="card-tag tag-planning">Planning</span>
+          </div>
+          <h3>Perencanaan Site Baru</h3>
+          <p>Simulasikan penambahan BTS atau site 5G baru untuk meningkatkan kualitas coverage jaringan dan mengurangi area blank spot secara efektif.</p>
+          <a href="{{ url_for('newsite') }}" class="btn-action">MULAI</a>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ===== SIMULASI ===== -->
+    <div class="group-divider">
+      <span class="group-label">Simulasi</span>
+      <span class="group-count">3 fitur</span>
+      <div class="group-line"></div>
+    </div>
+
+    <section class="feature-grid grid-3">
+
+      <div class="feature-card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">02</div>
+            <span class="card-tag tag-sim">Simulasi</span>
+          </div>
+          <h3>Drive Test (Rute Simulasi)</h3>
+          <p>Estimasi nilai RSRP dan SINR berdasarkan model propagasi menggunakan sampling point di sepanjang rute simulasi drive test yang telah dibuat.</p>
+          <a href="{{ url_for('simulationroute') }}" class="btn-action">MULAI</a>
+        </div>
       </div>
 
       <div class="feature-card">
-        <div class="card-icon">03</div>
-        <h3>Simulasi Coverage</h3>
-        <p>Visualisasi jangkauan sinyal site pada area pengujian yang ditentukan.</p>
-        <a href="{{ url_for('coverage') }}" class="btn-action">MULAI</a>
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">03</div>
+            <span class="card-tag tag-sim">Simulasi</span>
+          </div>
+          <h3>Drive Test (Data Real)</h3>
+          <p>Upload data CSV drive test real, lalu simulasikan dengan perhitungan sistem untuk mengatasi perbedaan rute yang mungkin terjadi antara kondisi real dan simulasi.</p>
+          <a href="{{ url_for('simulation_dt') }}" class="btn-action">MULAI</a>
+        </div>
       </div>
 
       <div class="feature-card">
-        <div class="card-icon">04</div>
-        <h3>Analisis Komparasi</h3>
-        <p>Bandingkan data hasil simulasi dengan data drive test aktual, guna melihat kesesuaian nilai.</p>
-        <a href="{{ url_for('analysis') }}" class="btn-action">MULAI</a>
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">04</div>
+            <span class="card-tag tag-sim">Simulasi</span>
+          </div>
+          <h3>Visualisasi Coverage</h3>
+          <p>Simulasi coverage sinyal site pada area pengujian. Sistem membentuk grid representasi kualitas cakupan dan analisis performa BTS jaringan 5G.</p>
+          <a href="{{ url_for('coverage') }}" class="btn-action">MULAI</a>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ===== VALIDASI ===== -->
+    <div class="group-divider">
+      <span class="group-label">Validasi &amp; Komparasi</span>
+      <span class="group-count">2 fitur</span>
+      <div class="group-line"></div>
+    </div>
+
+    <section class="feature-grid grid-2">
+
+      <div class="feature-card">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">05</div>
+            <span class="card-tag tag-validasi">Validasi</span>
+          </div>
+          <h3>Komparasi Drive Test</h3>
+          <p>Bandingkan data drive test real dengan hasil simulasi. Sistem menghitung deviasi antara keduanya — semakin kecil nilai deviasi, semakin baik performa model yang digunakan.</p>
+          <a href="{{ url_for('analysis') }}" class="btn-action">MULAI</a>
+        </div>
       </div>
 
       <div class="feature-card">
-        <div class="card-icon">05</div>
-        <h3>Site Baru</h3>
-        <p>Simulasi penempatan site baru, guna mendukung network planning jaringan 5G.</p>
-        <a href="{{ url_for('newsite') }}" class="btn-action">MULAI</a>
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-top">
+            <div class="card-icon">06</div>
+            <span class="card-tag tag-validasi">Validasi</span>
+          </div>
+          <h3>Komparasi Coverage</h3>
+          <p>Bandingkan hasil coverage real dengan coverage hasil simulasi untuk mengetahui tingkat akurasi model propagasi yang digunakan dalam sistem.</p>
+          <a href="{{ url_for('coveragecom') }}" class="btn-action">MULAI</a>
+        </div>
       </div>
 
-      <div class="feature-card">
-        <div class="card-icon">06</div>
-        <h3>Evaluasi Kualitas</h3>
-        <p>Review mendalam terhadap metrik efisiensi hasil simulasi sistem, guna melihat kesesuaian nilai.</p>
-        <a href="{{ url_for('evaluation') }}" class="btn-action">MULAI</a>
+    </section>
+
+    <!-- ===== ANALISIS ===== -->
+    <div class="group-divider">
+      <span class="group-label">Analisis</span>
+      <span class="group-count">1 fitur</span>
+      <div class="group-line"></div>
+    </div>
+
+    <section class="feature-grid grid-1">
+
+      <div class="feature-card card-wide">
+        <div class="card-accent"></div>
+        <div class="card-body">
+          <div class="card-wide-left">
+            <div class="card-top">
+              <div class="card-icon">07</div>
+              <span class="card-tag tag-analisis">Analisis</span>
+            </div>
+            <h3>Analisis Keseluruhan Simulasi</h3>
+          </div>
+          <div class="card-wide-body">
+            <p>Evaluasi menyeluruh terhadap hasil simulasi coverage jaringan 5G pada area yang ditentukan. Mencakup penilaian kualitas sinyal berdasarkan parameter RSRP dan SINR, yang kemudian diklasifikasikan ke dalam kategori kualitas jaringan sesuai standar yang berlaku.</p>
+          </div>
+          <div class="card-wide-action">
+            <a href="{{ url_for('evaluation') }}" class="btn-action">MULAI ANALISIS</a>
+          </div>
+        </div>
       </div>
 
     </section>
@@ -110,5 +240,5 @@
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="{{ url_for('static', filename='js/script.js') }}"></script>
+<script src="{{ url_for('static', filename='js/route.js') }}"></script>
 {% endblock %}

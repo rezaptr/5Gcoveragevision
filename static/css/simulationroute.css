@@ -1,0 +1,744 @@
+/* ===================================================================
+   SIMULATIONROUTE.CSS  — Rev 4.4
+   Perubahan dari Rev 4.2/4.3:
+     [1] Panel kanan diperlebar: max-width 280px → 320px, font/padding
+         diseragamkan dengan halaman route planning
+     [2] Panel RF: .panel-card dihapus, diganti .info-box biasa agar
+         style seragam dengan SITE INFORMATION, PARAMETER AKTIF, ROUTE DATA
+     [3] Antenna Height ditambahkan di Panel RF (field HTML)
+     [4] Azimuth & Jumlah Sektor ditambahkan di Panel RF (field HTML)
+     [5] Recalc indicator tetap dari v4.3
+   =================================================================== */
+
+/* ── Reset dasar ──────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin  : 0;
+  padding : 0;
+  height  : 100%;
+  overflow: hidden;
+}
+
+/* ── Header ──────────────────────────────────────────────────────── */
+.main-header {
+  background-color: #1F3C88;
+  padding: 20px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #FFFFFF;
+}
+.main-header h1 {
+  font-size: 22px;
+  padding-left: 30px;
+  font-weight: bold;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────── */
+.simulation-toolbar {
+  display    : flex;
+  gap        : 7px;
+  padding    : 8px 14px;
+  background : #fff;
+  border-bottom: 1px solid #ddd;
+  flex-wrap  : wrap;
+  align-items: center;
+  flex-shrink: 0;
+  height     : 50px;
+}
+
+.btn-toolbar {
+  padding      : 7px 12px;
+  border-radius: 7px;
+  border       : none;
+  font-weight  : 600;
+  background   : #3F72AF;
+  color        : #fff;
+  cursor       : pointer;
+  font-size    : 12px;
+  transition   : background 0.18s;
+  white-space  : nowrap;
+}
+.btn-toolbar:hover:not(:disabled) { background: #1F3C88; }
+.btn-toolbar:disabled              { background: #aaa; cursor: not-allowed; }
+
+.mode-toggle-group {
+  display      : flex;
+  gap          : 3px;
+  background   : #eef0f5;
+  border-radius: 8px;
+  padding      : 3px;
+}
+.btn-mode {
+  padding      : 5px 11px;
+  border-radius: 6px;
+  border       : none;
+  font-size    : 11px;
+  font-weight  : 600;
+  cursor       : pointer;
+  background   : transparent;
+  color        : #555;
+  transition   : all 0.18s;
+  white-space  : nowrap;
+}
+.btn-mode.active {
+  background: #1F3C88;
+  color     : #fff;
+  box-shadow: 0 2px 6px rgba(31,60,136,0.25);
+}
+.btn-mode:hover:not(.active) { background: #dde4f5; }
+
+.model-info-box {
+  display      : flex;
+  align-items  : center;
+  gap          : 5px;
+  background   : #1e2a3a;
+  border       : 1px solid #3a4a5a;
+  border-radius: 7px;
+  padding      : 5px 12px;
+  font-size    : 0.82rem;
+}
+.model-info-label { color: #8899aa; }
+.model-info-value { color: #00e5ff; font-weight: 700; }
+
+/* ── sim-page-wrapper ────────────────────────────────────────────── */
+.sim-page-wrapper {
+  display   : flex;
+  flex-direction: row;
+  height    : calc(100dvh - 104px);
+  overflow  : hidden;
+  padding   : 12px 14px 10px 14px;
+  gap       : 14px;
+}
+
+/* ── Kolom kiri: peta + tabel ────────────────────────────────────── */
+.sim-left-col {
+  display       : flex;
+  flex-direction: column;
+  flex          : 3;
+  min-width     : 0;
+  gap           : 0;
+  overflow      : hidden;
+}
+
+/* ── Peta ────────────────────────────────────────────────────────── */
+.simulation-map-wrapper {
+  flex     : 1;
+  position : relative;
+  min-height: 0;
+  border-radius: 12px 12px 0 0;
+  overflow : hidden;
+}
+#map-simulation {
+  width : 100%;
+  height: 100%;
+}
+
+/* ── Legend RSRP overlay ─────────────────────────────────────────── */
+.rsrp-legend {
+  position     : absolute;
+  top          : 10px;
+  right        : 10px;
+  z-index      : 1000;
+  background   : rgba(255,255,255,0.96);
+  padding      : 10px 12px;
+  border-radius: 10px;
+  box-shadow   : 0 3px 12px rgba(0,0,0,0.15);
+  max-width    : 190px;
+}
+.rsrp-legend h4 {
+  margin        : 0 0 7px 0;
+  color         : #1f3c88;
+  font-size     : 12px;
+  font-weight   : 700;
+  border-bottom : 2px solid #3F72AF;
+  padding-bottom: 5px;
+}
+.rsrp-legend table { width: 100%; border-collapse: collapse; }
+.rsrp-legend th    { background: #f0f4ff; padding: 4px 5px; text-align: left;
+                     font-size: 10px; font-weight: 700; color: #1F3C88; }
+.rsrp-legend td    { padding: 3px 5px; border-bottom: 1px solid #eee; font-size: 10px; }
+.rsrp-legend td:last-child { text-align: right; }
+
+/* ── Legend PCI overlay ─────────────────────────────────────────── */
+.pci-legend {
+  position     : absolute;
+  top          : 10px;
+  right        : 10px;
+  z-index      : 1000;
+  background   : rgba(255,255,255,0.96);
+  padding      : 10px 13px;
+  border-radius: 10px;
+  box-shadow   : 0 3px 12px rgba(0,0,0,0.15);
+  max-width    : 210px;
+  max-height   : 50%;
+  overflow-y   : auto;
+}
+.pci-legend h4 {
+  margin        : 0 0 7px 0;
+  color         : #1f3c88;
+  font-size     : 12px;
+  font-weight   : 700;
+  border-bottom : 2px solid #3F72AF;
+  padding-bottom: 5px;
+}
+.pci-legend-row {
+  display    : flex;
+  align-items: center;
+  gap        : 6px;
+  padding    : 3px 0;
+  font-size  : 11px;
+  color      : #333;
+  border-bottom: 1px solid #f2f2f2;
+}
+.pci-legend-row:last-child { border-bottom: none; }
+.pci-dot {
+  width        : 11px;
+  height       : 11px;
+  border-radius: 50%;
+  border       : 1px solid rgba(0,0,0,0.18);
+  flex-shrink  : 0;
+}
+
+/* ── Tabel sel ───────────────────────────────────────────────────── */
+.cell-info-panel {
+  height    : 178px;
+  min-height: 178px;
+  max-height: 178px;
+  flex-shrink: 0;
+  display   : flex;
+  flex-direction: column;
+  background: #fff;
+  border-top: 3px solid #1F3C88;
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+  overflow  : hidden;
+}
+.cell-panel-header {
+  display        : flex;
+  justify-content: space-between;
+  align-items    : center;
+  padding        : 6px 14px;
+  background     : #1F3C88;
+  color          : #fff;
+  font-size      : 12px;
+  font-weight    : 700;
+  gap            : 8px;
+  flex-wrap      : wrap;
+  flex-shrink    : 0;
+  min-height     : 32px;
+}
+.cell-panel-hint {
+  font-weight: 400;
+  opacity    : 0.72;
+  font-size  : 10px;
+}
+.cell-legend-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+.line-pill {
+  padding      : 1px 7px;
+  border-radius: 10px;
+  font-size    : 10px;
+  color        : #fff;
+  font-weight  : 600;
+}
+.cell-table-wrapper {
+  flex      : 1;
+  overflow-x: auto;
+  overflow-y: auto;
+  min-height: 0;
+}
+.cell-empty-state {
+  padding   : 18px;
+  color     : #aaa;
+  font-size : 12px;
+  text-align: center;
+}
+.cell-table {
+  width          : 100%;
+  border-collapse: collapse;
+  font-size      : 12px;
+}
+.cell-table thead {
+  position  : sticky;
+  top       : 0;
+  z-index   : 2;
+  background: #e8edf8;
+}
+.cell-table th {
+  padding      : 5px 11px;
+  text-align   : left;
+  color        : #1F3C88;
+  font-weight  : 700;
+  white-space  : nowrap;
+  border-bottom: 2px solid #c5d0ea;
+}
+.cell-table td {
+  padding       : 4px 11px;
+  border-bottom : 1px solid #eef0f5;
+  white-space   : nowrap;
+  color         : #333;
+  vertical-align: middle;
+}
+
+/* Row warna per kategori */
+.row-serving  td { background: #eef5ff; }
+.row-detected td { background: #f0fbf4; }
+.row-listed   td { background: #f8f8f8; }
+.cell-table tr:hover td { background: #e6eeff !important; }
+
+/* Badge kategori */
+.cell-type {
+  display          : inline-block;
+  padding          : 2px 7px 2px 4px;
+  border-radius    : 4px;
+  font-size        : 11px;
+  font-weight      : 700;
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+.cat-serving  {
+  background      : #d0e8ff;
+  color           : #1F3C88;
+  border-left-color: #1F3C88;
+}
+.cat-detected {
+  background      : #d4f5e2;
+  color           : #1a6a3a;
+  border-left-color: #00a955;
+}
+.cat-listed {
+  background      : #eeeeee;
+  color           : #555555;
+  border-left-color: #aaaaaa;
+}
+
+.dot {
+  display       : inline-block;
+  width         : 8px;
+  height        : 8px;
+  border-radius : 50%;
+  margin-right  : 3px;
+  vertical-align: middle;
+  border        : 1px solid rgba(0,0,0,0.15);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   [PERBAIKAN 1] Kolom kanan: diperlebar & diseragamkan dengan route page
+   ══════════════════════════════════════════════════════════════════ */
+.simulation-info {
+  flex          : 1;
+  display       : flex;
+  flex-direction: column;
+  gap           : 0;
+  overflow-y    : auto;
+  overflow-x    : hidden;
+  /* [PERUBAHAN] diperlebar dari 280px → 320px */
+  min-width     : 260px;
+  max-width     : 320px;
+
+  scrollbar-width: thin;
+  scrollbar-color: #c8d0dc transparent;
+}
+.simulation-info::-webkit-scrollbar       { width: 4px; }
+.simulation-info::-webkit-scrollbar-track { background: transparent; }
+.simulation-info::-webkit-scrollbar-thumb { background: #c8d0dc; border-radius: 3px; }
+
+/* ── Info box — sama persis dengan route page ────────────────────── */
+.info-box {
+  background   : #fff;
+  border       : 1px solid #dde3ee;
+  /* [PERUBAHAN] padding diperbesar: 11px 13px → 14px 16px */
+  padding      : 14px 16px;
+  border-radius: 10px;
+  margin-bottom: 9px;
+  flex-shrink  : 0;
+}
+.info-box h3 {
+  margin        : 0 0 10px 0;
+  color         : #1F3C88;
+  /* [PERUBAHAN] font-size 12px → 13px, tambah border bawah */
+  font-size     : 13px;
+  font-weight   : 700;
+  padding-bottom: 7px;
+  border-bottom : 2px solid #e8edf8;
+}
+.info-box ul { list-style: none; padding: 0; margin: 0; }
+.info-box li {
+  padding      : 5px 0;
+  border-bottom: 1px solid #f0f2f7;
+  color        : #34495e;
+  /* [PERUBAHAN] font-size 11px → 12px */
+  font-size    : 12px;
+  display      : flex;
+  align-items  : center;
+  gap          : 4px;
+}
+.info-box li:last-child { border-bottom: none; }
+.info-box li strong     { color: #1F3C88; margin-right: 3px; min-width: 110px; }
+
+.result-box              { background: #1F3C88 !important; color: #fff !important; }
+.result-box h3           { color: #fff !important; border-bottom-color: rgba(255,255,255,0.2) !important; }
+.result-box p            { color: #fff !important; font-size: 11px; margin: 4px 0; }
+.result-box li           { color: #fff !important; border-bottom-color: rgba(255,255,255,0.15) !important; }
+.success-text {
+  background   : rgba(255,255,255,0.18);
+  padding      : 7px 9px;
+  border-radius: 6px;
+  margin-top   : 6px;
+  text-align   : center;
+  font-weight  : 500;
+  font-size    : 11px;
+  color        : #fff;
+}
+
+.btn-export {
+  margin-top   : auto;
+  margin-bottom: 6px;
+  padding      : 11px;
+  border-radius: 9px;
+  border       : none;
+  background   : #00ADB5;
+  color        : #fff;
+  cursor       : pointer;
+  font-weight  : bold;
+  font-size    : 12px;
+  width        : 100%;
+  flex-shrink  : 0;
+  transition   : background 0.18s, transform 0.18s;
+}
+.btn-export:hover:not(:disabled) { background: #009aa1; transform: translateY(-1px); }
+.btn-export:disabled              { background: #aaa; cursor: not-allowed; opacity: 0.7; }
+
+/* ══════════════════════════════════════════════════════════════════
+   [PERBAIKAN 2] Panel RF — style diseragamkan dengan info-box lain.
+   .panel-card dihapus sepenuhnya. Panel RF sekarang pakai .info-box
+   biasa dengan sub-section collapsible di dalamnya.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Baris judul RF di dalam info-box: label + tombol toggle */
+.rf-header-row {
+  display        : flex;
+  justify-content: space-between;
+  align-items    : center;
+  margin-bottom  : 8px;
+  /* Header row menggantikan h3, pakai style yang sama */
+}
+.rf-header-row .rf-title {
+  color      : #1F3C88;
+  font-size  : 13px;
+  font-weight: 700;
+}
+
+/* Tombol toggle — ringan, tidak ada gradient */
+.btn-collapse {
+  background   : #eef2fa;
+  border       : 1px solid #c5d0ea;
+  border-radius: 5px;
+  color        : #1F3C88;
+  cursor       : pointer;
+  font-size    : 11px;
+  font-weight  : 700;
+  padding      : 2px 8px;
+  transition   : background 0.15s;
+  line-height  : 1.4;
+}
+.btn-collapse:hover { background: #d8e2f5; }
+
+/* Badge ringkasan RF — selalu terlihat, di bawah header */
+.rf-badge-row {
+  display  : flex;
+  flex-wrap: wrap;
+  gap      : 5px;
+  margin-bottom: 4px;
+}
+.rf-badge-pill {
+  background   : #eef2fa;
+  border       : 1px solid #c5d0ea;
+  border-radius: 12px;
+  color        : #1F3C88;
+  font-size    : 10px;
+  font-weight  : 600;
+  padding      : 2px 9px;
+  white-space  : nowrap;
+}
+
+/* Body panel RF — tampil saat toggle */
+.rf-panel-body {
+  padding-top: 8px;
+  border-top : 1px solid #edf0f7;
+  margin-top : 4px;
+}
+
+/* Divider antar grup field */
+.rf-section-label {
+  font-size   : 10px;
+  font-weight : 700;
+  color       : #8899bb;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin      : 10px 0 5px;
+}
+.rf-section-label:first-child { margin-top: 0; }
+
+/* Field rows — 2 kolom */
+.field-row {
+  display: flex;
+  gap    : 8px;
+  margin : 0 0 6px;
+}
+.field-col {
+  flex   : 1;
+  min-width: 0;
+}
+.field-col.full { flex: 0 0 100%; }
+
+.field-label {
+  display    : block;
+  font-size  : 10px;
+  font-weight: 600;
+  color      : #556;
+  margin-bottom: 3px;
+}
+.field-control {
+  width        : 100%;
+  padding      : 5px 6px;
+  border       : 1px solid #c8d0e0;
+  border-radius: 6px;
+  font-size    : 11px;
+  color        : #1F3C88;
+  background   : #f8faff;
+  cursor       : pointer;
+  transition   : border-color 0.15s, box-shadow 0.15s;
+  appearance   : auto;
+}
+.field-control:focus {
+  outline     : none;
+  border-color: #3F72AF;
+  box-shadow  : 0 0 0 2px rgba(63,114,175,0.18);
+}
+
+/* [BARU] Input number untuk antenna height & azimuth */
+.field-control-num {
+  width        : 100%;
+  padding      : 5px 6px;
+  border       : 1px solid #c8d0e0;
+  border-radius: 6px;
+  font-size    : 11px;
+  color        : #1F3C88;
+  background   : #f8faff;
+  transition   : border-color 0.15s, box-shadow 0.15s;
+  text-align   : center;
+  font-weight  : 600;
+}
+.field-control-num:focus {
+  outline     : none;
+  border-color: #3F72AF;
+  box-shadow  : 0 0 0 2px rgba(63,114,175,0.18);
+}
+
+/* Container untuk azimuth multi-sektor */
+.azimuth-inputs {
+  display   : flex;
+  gap       : 5px;
+  flex-wrap : wrap;
+  margin-top: 4px;
+}
+.azimuth-inputs input {
+  width        : calc(33% - 4px);
+  min-width    : 52px;
+  padding      : 4px 4px;
+  border       : 1px solid #c8d0e0;
+  border-radius: 6px;
+  font-size    : 11px;
+  color        : #1F3C88;
+  background   : #f8faff;
+  text-align   : center;
+  font-weight  : 600;
+  transition   : border-color 0.15s, box-shadow 0.15s;
+}
+.azimuth-inputs input:focus {
+  outline     : none;
+  border-color: #3F72AF;
+  box-shadow  : 0 0 0 2px rgba(63,114,175,0.18);
+}
+.azimuth-label-row {
+  display   : flex;
+  gap       : 5px;
+  flex-wrap : wrap;
+  margin-top: 2px;
+}
+.azimuth-label-row span {
+  width      : calc(33% - 4px);
+  min-width  : 52px;
+  text-align : center;
+  font-size  : 9px;
+  color      : #888;
+}
+
+.rf-note {
+  margin   : 8px 0 0;
+  font-size: 10px;
+  color    : #888;
+  line-height: 1.5;
+}
+
+/* Tombol apply di dalam RF panel */
+.btn-rf-apply {
+  width        : 100%;
+  margin-top   : 8px;
+  padding      : 7px;
+  border-radius: 7px;
+  border       : none;
+  background   : #1F3C88;
+  color        : #fff;
+  font-weight  : 700;
+  font-size    : 12px;
+  cursor       : pointer;
+  transition   : background 0.15s;
+}
+.btn-rf-apply:hover { background: #3F72AF; }
+
+/* ── Loading overlay ─────────────────────────────────────────────── */
+.loading-overlay {
+  position       : fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background     : rgba(0,0,0,0.55);
+  display        : flex;
+  align-items    : center;
+  justify-content: center;
+  z-index        : 9999;
+  backdrop-filter: blur(3px);
+}
+.loading-overlay > div {
+  text-align   : center;
+  background   : #fff;
+  padding      : 34px 46px;
+  border-radius: 14px;
+  box-shadow   : 0 10px 38px rgba(0,0,0,0.22);
+  min-width    : 260px;
+}
+.loading-overlay h2 { font-size: 14px; font-weight: 700; color: #1F3C88; margin: 0 0 4px; }
+.loading-overlay p  { font-size: 12px; color: #999; margin: 0; }
+
+.spinner {
+  width: 48px; height: 48px;
+  border: 5px solid #f0f0f0;
+  border-top: 5px solid #1F3C88;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 14px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ═══════════════════════════════════════════════════════════════════
+   AUTO-RECALC INDICATOR [v4.3 — tetap]
+   ═══════════════════════════════════════════════════════════════════ */
+.recalc-indicator {
+  display      : inline-flex;
+  align-items  : center;
+  gap          : 5px;
+  padding      : 5px 11px;
+  border-radius: 7px;
+  font-size    : 12px;
+  font-weight  : 600;
+  white-space  : nowrap;
+  transition   : opacity 0.25s ease;
+}
+.recalc-indicator.recalc-running {
+  background : rgba(255, 193, 7, 0.18);
+  color      : #b8860b;
+  border     : 1px solid rgba(255, 193, 7, 0.55);
+  animation  : recalc-pulse 1s ease-in-out infinite;
+}
+.recalc-indicator.recalc-done {
+  background : rgba(0, 169, 85, 0.15);
+  color      : #1a6a3a;
+  border     : 1px solid rgba(0, 169, 85, 0.45);
+  animation  : none;
+}
+@keyframes recalc-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .recalc-indicator { display: none !important; }
+  .sim-page-wrapper {
+    flex-direction: column;
+    height        : auto;
+    overflow      : auto;
+    padding       : 8px;
+  }
+  .sim-left-col           { flex: none; }
+  .simulation-map-wrapper { height: 56vw; min-height: 240px; flex: none; }
+  .simulation-info        { max-width: 100%; overflow-y: visible; }
+  .cell-info-panel        { height: 200px; min-height: 200px; max-height: 200px; }
+}
+
+/* Base button — semua toolbar button pakai ini */
+.btn-toolbar {
+  padding      : 7px 13px;
+  border-radius: 7px;
+  border       : none;
+  font-weight  : 600;
+  font-size    : 12px;
+  cursor       : pointer;
+  transition   : all 0.18s;
+  white-space  : nowrap;
+  color        : #fff;
+  background   : #3F72AF;   /* biru — default / aksi netral */
+}
+.btn-toolbar:hover:not(:disabled) {
+  background: #1F3C88;
+  transform : translateY(-1px);
+}
+.btn-toolbar:disabled {
+  background: #c0c8d8;
+  color     : #8a9ab0;
+  cursor    : not-allowed;
+  transform : none;
+}
+ 
+/* Teal — aksi kalkulasi / run utama */
+.btn-toolbar.btn-teal                      { background: #00ADB5; }
+.btn-toolbar.btn-teal:hover:not(:disabled) { background: #008a91; }
+ 
+/* Hijau — simpan / export */
+.btn-toolbar.btn-green                      { background: #2e7d32; }
+.btn-toolbar.btn-green:hover:not(:disabled) { background: #1b5e20; }
+ 
+/* Abu — kembali / navigasi sekunder */
+.btn-toolbar.btn-back                      { background: #6c757d; }
+.btn-toolbar.btn-back:hover:not(:disabled) { background: #495057; }
+ 
+/* Ungu — debug */
+.btn-toolbar.btn-debug {
+  background: #7b1fa2;
+  font-size : 11px;
+  padding   : 6px 10px;
+}
+.btn-toolbar.btn-debug:hover { background: #4a0072; }
+ 
+/* Upload label — style sama persis dengan btn-toolbar default */
+.btn-upload {
+  display      : inline-flex;
+  align-items  : center;
+  gap          : 5px;
+  cursor       : pointer;
+  /* warna sama dengan default biru */
+}
+ 
+/* Toolbar divider */
+.toolbar-divider {
+  width      : 1px;
+  height     : 28px;
+  background : #dde3ee;
+  margin     : 0 3px;
+  align-self : center;
+  flex-shrink: 0;
+}
+ 
+/* Hapus mode-toggle-group — tidak dipakai lagi */
+.mode-toggle-group { display: none !important; }

@@ -1,0 +1,305 @@
+{% extends "base_app.html" %}
+
+{% block title %}
+Simulasi Drive Test 5G - RSRP dan SINR
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="{{ url_for('static', filename='css/simulationroute.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<!-- ================= HEADER ================= -->
+<header class="main-header">
+  <h1>SIMULASI HASIL DRIVE TEST 5G - RSRP DAN SINR</h1>
+</header>
+
+<!-- ================= TOOLBAR ================= -->
+<section class="simulation-toolbar">
+
+  <div class="mode-toggle-group">
+    <button id="btnModeRSRP" class="btn-mode active" onclick="setDisplayMode('rsrp')">📶 RSRP/SINR</button>
+    <button id="btnModePCI"  class="btn-mode"        onclick="setDisplayMode('pci')">🎨 PCI</button>
+  </div>
+
+  <button id="btnGenerateSampling" class="btn-toolbar">Generate Titik Sampling</button>
+  <button id="btnCalculateRSRP"    class="btn-toolbar">Hitung RSRP</button>
+  <button id="btnCalculateSINR"    class="btn-toolbar">Hitung SINR</button>
+  <button id="btnSimulatePCI"      class="btn-toolbar" disabled>Simulasi PCI</button>
+
+  <!-- [v4.3] Auto-recalc indicator — muncul saat RF berubah & dihitung ulang -->
+  <span id="recalcIndicator" class="recalc-indicator" style="display:none;"></span>
+
+  <button id="btnBackToRoute"      class="btn-toolbar">← Kembali ke Route Planning</button>
+</section>
+
+<!-- ================= MAIN LAYOUT ================= -->
+<div class="sim-page-wrapper">
+
+  <!-- Kolom kiri: peta + tabel -->
+  <div class="sim-left-col">
+
+    <!-- Peta -->
+    <div class="simulation-map-wrapper">
+
+      <!-- Legend RSRP/SINR overlay -->
+      <div id="rsrpLegend" class="rsrp-legend" style="display:none;">
+        <h4 id="legendTitle">RSRP (dBm)</h4>
+        <table>
+          <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
+          <tbody id="legendTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Legend PCI overlay -->
+      <div id="pciLegend" class="pci-legend" style="display:none;">
+        <h4>NR PCC Serving PCI</h4>
+        <div id="pciLegendBody"></div>
+      </div>
+
+      <div id="map-simulation"></div>
+    </div>
+
+    <!-- Tabel NR Serving & Neighbor Cells -->
+    <div class="cell-info-panel" id="cellInfoPanel">
+      <div class="cell-panel-header">
+        <span id="cellPanelTitle">
+          📡 NR Serving and Neighbor Cells
+          <span class="cell-panel-hint">— Klik titik simulasi di peta</span>
+        </span>
+        <div class="cell-legend-pills" id="cellLegendPills">
+          <!-- diisi JS -->
+        </div>
+      </div>
+      <div class="cell-table-wrapper" id="cellTableWrapper">
+        <div class="cell-empty-state">
+          Belum ada titik dipilih — klik titik berwarna di peta untuk melihat detail sel
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /sim-left-col -->
+
+<!-- ================================================================
+     PATCH HTML — Panel Kanan simulationroute.html
+     Rev 4.5 — ganti blok <aside class="simulation-info"> seluruhnya
+     dengan konten di bawah ini.
+
+     Perubahan dari Rev 4.4:
+       [1] Toolbar model-info-box (Clutter/Model) dihapus — duplikat
+           dengan badge yang sudah ada di Panel RF
+       [2] Field Clutter dihapus dari Panel RF — clutter bukan parameter
+           yang diubah pengguna, melainkan hasil pembacaan shapefile.
+           Clutter loss tetap dihitung di backend (JS), hanya UI-nya
+           yang dihapus.
+       [3] Badge ringkasan RF (rf-badge-row) dihapus — informasi RF
+           cukup dilihat lewat dropdown saat panel di-expand
+     ================================================================ -->
+
+  <aside class="simulation-info">
+
+    <!-- ── SITE INFORMATION ── -->
+    <div class="info-box">
+      <h3>📡 SITE INFORMATION</h3>
+      <ul>
+        <li><strong>Site ID:</strong>        <span id="infoSiteId">-</span></li>
+        <li><strong>Latitude:</strong>        <span id="infoLat">-</span></li>
+        <li><strong>Longitude:</strong>       <span id="infoLng">-</span></li>
+        <li><strong>Jumlah Sektor:</strong>   <span id="infoSectors">-</span></li>
+        <li><strong>Antenna Height:</strong>  <span id="infoHeight">- m</span></li>
+      </ul>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         PANEL RF [v4.5] — badge ringkasan dihapus, clutter dihapus
+         ══════════════════════════════════════════════════════════ -->
+    <div class="info-box" id="rfInfoBox">
+
+      <!-- Header: judul + tombol toggle -->
+      <div class="rf-header-row">
+        <span class="rf-title">⚙️ Parameter RF</span>
+        <button id="btnToggleRF" class="btn-collapse" title="Tampilkan / sembunyikan">
+          <span id="rfToggleIcon">▶ Ubah</span>
+        </button>
+      </div>
+
+      <!-- Body — tersembunyi default, muncul saat toggle -->
+      <div id="rfPanelBody" class="rf-panel-body" style="display:none;">
+
+        <!-- === Grup 1: Propagasi === -->
+        <div class="rf-section-label">Propagasi</div>
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">Scenario</label>
+            <select id="rf_scenario" class="field-control">
+              <option value="uma" selected>UMa — Macro</option>
+              <option value="umi">UMi — Micro</option>
+              <option value="rma">RMa — Rural</option>
+            </select>
+          </div>
+          <div class="field-col">
+            <label class="field-label">Condition</label>
+            <select id="rf_condition" class="field-control">
+              <option value="nlos" selected>NLOS</option>
+              <option value="los">LOS</option>
+              <option value="los_nlos">LOS/NLOS</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- === Grup 2: Frekuensi & Daya === -->
+        <div class="rf-section-label">Frekuensi &amp; Daya</div>
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">TX Power</label>
+            <select id="rf_txpower" class="field-control">
+              <option value="43">43 dBm</option>
+              <option value="46" selected>46 dBm</option>
+              <option value="49">49 dBm</option>
+            </select>
+          </div>
+          <div class="field-col">
+            <label class="field-label">Frekuensi</label>
+            <select id="rf_frequency" class="field-control">
+              <option value="2100">2100 MHz</option>
+              <option value="2300" selected>2300 MHz</option>
+              <option value="2600">2600 MHz</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">Bandwidth</label>
+            <select id="rf_bandwidth" class="field-control">
+              <option value="5">5 MHz</option>
+              <option value="10">10 MHz</option>
+              <option value="15">15 MHz</option>
+              <option value="20">20 MHz</option>
+              <option value="25">25 MHz</option>
+              <option value="30" selected>30 MHz</option>
+              <option value="40">40 MHz</option>
+              <option value="50">50 MHz</option>
+              <option value="60">60 MHz</option>
+              <option value="80">80 MHz</option>
+              <option value="90">90 MHz</option>
+              <option value="100">100 MHz</option>
+            </select>
+          </div>
+          <div class="field-col">
+            <!-- [BARU v4.4] Antenna Height -->
+            <label class="field-label">Antenna Height (m)</label>
+            <input type="number" id="rf_ant_height"
+                   class="field-control-num"
+                   value="30" min="5" max="150" step="1">
+          </div>
+        </div>
+
+        <!-- === Grup 3: Konfigurasi Antena [BARU v4.4] === -->
+        <div class="rf-section-label">Konfigurasi Antena</div>
+        <div class="field-row">
+          <div class="field-col">
+            <label class="field-label">Jumlah Sektor</label>
+            <select id="rf_num_sectors" class="field-control">
+              <option value="1">1 Sektor</option>
+              <option value="2">2 Sektor</option>
+              <option value="3" selected>3 Sektor</option>
+              <option value="4">4 Sektor</option>
+              <option value="6">6 Sektor</option>
+            </select>
+          </div>
+          <div class="field-col">
+            <label class="field-label">Beamwidth (°)</label>
+            <select id="rf_beamwidth" class="field-control">
+              <option value="45">45°</option>
+              <option value="65" selected>65°</option>
+              <option value="90">90°</option>
+              <option value="120">120°</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Azimuth per sektor — dinamis, diisi JS saat num_sectors berubah -->
+        <div class="field-col full" id="azimuthContainer" style="margin-bottom:4px;">
+          <label class="field-label">Azimuth per Sektor (°)</label>
+          <div class="azimuth-inputs" id="azimuthInputs">
+            <!-- diisi JS berdasarkan jumlah sektor -->
+          </div>
+          <div class="azimuth-label-row" id="azimuthLabels">
+            <!-- label Sek-1, Sek-2, ... diisi JS -->
+          </div>
+        </div>
+
+        <p class="rf-note">
+          Default diisi otomatis dari data site.<br>
+          Ubah nilai → peta diperbarui otomatis (650ms). 🔄
+        </p>
+
+        <!-- Tombol terapkan (opsional, untuk mobile / aksesibilitas) -->
+        <button class="btn-rf-apply" id="btnApplyRF" onclick="applyRFManual()">
+          ↻ Terapkan Perubahan
+        </button>
+
+      </div><!-- /rfPanelBody -->
+    </div><!-- /rfInfoBox -->
+
+    <!-- ── PARAMETER AKTIF ── -->
+    <div class="info-box">
+      <h3>⚙️ PARAMETER AKTIF</h3>
+      <ul>
+        <li><strong>Model Propagasi:</strong> <span id="paramModelInfo">-</span></li>
+        <li><strong>Clutter:</strong>          <span id="paramClutter">-</span></li>
+        <li><strong>Frekuensi:</strong>       <span id="paramFreq">2300 MHz</span></li>
+        <li><strong>Bandwidth:</strong>        <span id="paramBW">30 MHz</span></li>
+        <li><strong>Tx Power:</strong>         <span id="paramTxPower">46 dBm</span></li>
+        <li><strong>Antenna Height:</strong>   <span id="paramHeight">- m</span></li>
+        <!-- [BARU v4.4] -->
+        <li><strong>Jumlah Sektor:</strong>    <span id="paramNumSectors">-</span></li>
+        <li><strong>Azimuth:</strong>          <span id="paramAzimuths">-</span></li>
+      </ul>
+    </div>
+
+    <!-- ── ROUTE DATA ── -->
+    <div class="info-box">
+      <h3>📊 ROUTE DATA</h3>
+      <ul>
+        <li><strong>Panjang Rute:</strong>         <span id="routeDistance">-</span></li>
+        <li><strong>Estimasi Waktu:</strong>        <span id="routeTime">-</span></li>
+        <li><strong>Sampling Interval:</strong>     <span id="samplingInterval">10 m</span></li>
+        <li><strong>Jumlah Titik Sampling:</strong> <span id="samplingCount">-</span></li>
+      </ul>
+    </div>
+
+    <!-- ── HASIL SIMULASI ── -->
+    <div id="resultBox" class="info-box result-box" style="display:none;">
+      <h3 id="resultTitle">📶 Simulasi Complete</h3>
+      <p id="resultStats"></p>
+      <div class="success-text" id="resultMessage">Menunggu kalkulasi...</div>
+    </div>
+
+    <button id="btnExportCSV" class="btn-export" disabled>
+      💾 Export Data CSV
+    </button>
+
+  </aside>
+
+</div><!-- /sim-page-wrapper -->
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="loading-overlay" style="display:none;">
+  <div class="spinner"></div>
+  <h2>Loading Simulation Data...</h2>
+  <p>Mohon tunggu sebentar</p>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="{{ url_for('static', filename='js/simulation.js') }}"></script>
+{% endblock %}

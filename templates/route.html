@@ -1,34 +1,27 @@
 {% extends "base_app.html" %}
-
 {% block title %}Perencanaan Rute Drive Test 5G{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/route.css') }}">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<!-- CSS boleh tetap di sini -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css"/>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css"/>
 {% endblock %}
 
 {% block content %}
 
-<!-- MAIN HEADER -->
 <header class="main-header">
   <h1>PERENCANAAN RUTE DRIVE TEST 5G OTOMATIS</h1>
 </header>
 
-<!-- TOOLBAR -->
 <section class="route-toolbar">
-
-  <!-- Upload group: file input + status + tombol ganti -->
   <div class="upload-group">
     <label class="upload-label" for="fileInput">
       <i class="fas fa-file-excel"></i> Upload File Site (XLSX)
     </label>
     <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none;">
     <span id="uploadStatus" class="upload-status-text"></span>
-    <!-- Tombol hapus/ganti file — hanya muncul kalau ada data -->
     <button id="btnClearSite" class="btn-clear-site" title="Hapus data site & upload file baru">
       ✕ Ganti File
     </button>
@@ -36,17 +29,25 @@
 
   <input list="siteList" id="siteSearch" placeholder="🔍 Cari Site ID..." class="site-search-input">
   <datalist id="siteList"></datalist>
+  
+  <!-- Hapus button btnGenerateRing yang lama, ganti ini -->
+  <div class="radius-group">
+    <label class="radius-label">Radius</label>
+    <select id="radiusSelect" class="radius-select">
+      <option value="35">50m — Site dalam kompleks</option>
+      <option value="150" selected>150m — Default</option>
+      <option value="250">200m — Area luas</option>
+      <option value="400">400m — Pinggir jalan besar</option>
+      <option value="600">600m — Pinggir tol/nasional</option>
+    </select>
+  </div>
 
-  <button id="btnGenerateRing">Generate Radius</button>
   <button id="btnMainRoute">Generate Main Route</button>
   <button id="btnSampling">Titik Sampling</button>
   <button id="btnAltRoute">Generate Rute Alternatif</button>
   <button id="btnExportKML">Export KML</button>
-  <button id="btnSimulate" disabled style="opacity:0.5;cursor:not-allowed;">Simulasi Drive Test</button>
-
 </section>
 
-<!-- MAIN LAYOUT -->
 <div class="route-container">
 
   <!-- MAP -->
@@ -58,29 +59,119 @@
   <!-- INFO PANEL -->
   <aside class="route-info">
 
+    <!-- Status Sistem -->
     <div class="info-box">
       <h3>Status Sistem</h3>
-      <p id="statusDeadEnd">⏳ Menunggu analisis rute...</p>
-      <p id="statusRoadType">⏳ Menunggu analisis jalan...</p>
+      <ul class="status-list">
+        <li>
+          <span class="status-dot waiting" id="dotRoute"></span>
+          <span id="statusRoute">Menunggu analisis rute...</span>
+        </li>
+        <li>
+          <span class="status-dot waiting" id="dotRoad"></span>
+          <span id="statusRoad">Menunggu analisis jalan...</span>
+        </li>
+        <li>
+          <span class="status-dot idle" id="dotSession"></span>
+          <span id="statusSession">Sesi rute: tidak ada</span>
+        </li>
+        <li>
+          <span class="status-dot idle" id="dotArea"></span>
+          <span id="statusArea">Tipe area: belum dianalisis</span>
+        </li>
+        <li>
+          <span class="status-dot idle" id="dotAccess"></span>
+          <span id="statusAccess">Potensi akses: belum dianalisis</span>
+        </li>
+      </ul>
     </div>
 
+    <!-- Session restore banner -->
+    <div class="session-restore-banner" id="sessionRestoreBanner" style="display:none;">
+      <span class="restore-icon">🔄</span>
+      <span>Rute sebelumnya dipulihkan dari sesi</span>
+    </div>
+
+    <!-- Rute Utama -->
     <div class="info-box">
-      <h3>Informasi Rute Utama</h3>
-      <p>📏 Total Jarak: <b id="totalDistance">-</b></p>
-      <p>⏱️ Estimasi Waktu: <b id="estTime">-</b></p>
-      <p>🚗 Kecepatan Rata-rata: <b id="avgSpeed">-</b></p>
-      <p>📍 Titik Sampling: <b id="samplingCount">-</b></p>
+      <h3>Rute Utama</h3>
+      <div class="route-stat-grid">
+        <div class="route-stat-item main-accent">
+          <span class="stat-label">Jarak</span>
+          <span class="stat-value empty" id="totalDistance">—</span>
+        </div>
+        <div class="route-stat-item main-accent">
+          <span class="stat-label">Waktu</span>
+          <span class="stat-value empty" id="estTime">—</span>
+        </div>
+        <div class="route-stat-item main-accent">
+          <span class="stat-label">Kecepatan</span>
+          <span class="stat-value empty" id="avgSpeed">—</span>
+        </div>
+        <div class="route-stat-item main-accent">
+          <span class="stat-label">Sampling</span>
+          <span class="stat-value empty" id="samplingCount">—</span>
+        </div>
+      </div>
     </div>
 
+    <!-- Analisis Jalan Utama -->
+    <div class="info-box" id="roadAnalysisBox" style="display:none;">
+      <h3>Analisis Jalan — Utama</h3>
+      <div class="analysis-bar-group" id="mainRoadBars">
+        <!-- diisi JS -->
+      </div>
+      <div class="analysis-tags" id="mainRoadTags">
+        <!-- diisi JS -->
+      </div>
+    </div>
+
+    <!-- Rute Alternatif -->
     <div class="info-box">
-      <h3>Informasi Rute Alternatif</h3>
-      <p>📏 Total Jarak: <b id="altDistance">-</b></p>
-      <p>⏱️ Estimasi Waktu: <b id="altTime">-</b></p>
-      <p>🚗 Kecepatan Rata-rata: <b id="altSpeed">-</b></p>
-      <p>📊 Status: <b id="altStatus">Belum di-generate</b></p>
+      <h3>Rute Alternatif</h3>
+      <div class="route-stat-grid">
+        <div class="route-stat-item alt-accent">
+          <span class="stat-label">Jarak</span>
+          <span class="stat-value empty" id="altDistance">—</span>
+        </div>
+        <div class="route-stat-item alt-accent">
+          <span class="stat-label">Waktu</span>
+          <span class="stat-value empty" id="altTime">—</span>
+        </div>
+        <div class="route-stat-item alt-accent">
+          <span class="stat-label">Kecepatan</span>
+          <span class="stat-value empty" id="altSpeed">—</span>
+        </div>
+        <div class="route-stat-item alt-accent">
+          <span class="stat-label">Status</span>
+          <span class="stat-value empty" id="altStatus">—</span>
+        </div>
+      </div>
+      <div class="alt-status-badge not-generated" id="altStatusBadge">
+        ⚪ Belum di-generate
+      </div>
     </div>
 
-    <button class="reset-btn" id="btnReset">Reset Semua Rute</button>
+    <!-- Analisis Jalan Alternatif -->
+    <div class="info-box" id="roadAnalysisAltBox" style="display:none;">
+      <h3>Analisis Jalan — Alternatif</h3>
+      <div class="analysis-bar-group" id="altRoadBars">
+        <!-- diisi JS -->
+      </div>
+      <div class="analysis-tags" id="altRoadTags">
+        <!-- diisi JS -->
+      </div>
+    </div>
+
+    <button class="simulate-btn" id="btnSimulate" onclick="goToSimulation()"
+            disabled style="opacity:0.5;cursor:not-allowed;">
+      🚗 Simulasi Drive Test
+    </button>
+
+    <!-- Tombol Reset -->
+    <button class="reset-btn" id="btnReset" onclick="resetAll()">
+      🗑️ Reset Semua Rute
+    </button>
 
   </aside>
 </div>

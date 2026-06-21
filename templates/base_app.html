@@ -8,26 +8,24 @@
     <!-- Global CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/sidebar.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" rel="stylesheet">
 
     <!-- Page Specific CSS -->
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-<body>
-    
-    <!-- GLOBAL SIDEBAR -->
+
+    <!-- ===================== GLOBAL SIDEBAR ===================== -->
     <aside id="globalSidebar" class="global-sidebar collapsed">
 
-        <!-- Header -->
+        <!-- Header / Branding -->
         <div class="sidebar-header">
-            <h3>NAV PANEL</h3>
-            <button id="closeSidebar" class="close-btn">&times;</button>
-        </div>
-
-        <!-- Branding strip -->
-        <div class="sidebar-brand">
-            <p class="sidebar-brand-title">5G Drive Test<br>Planning System</p>
-            <p class="sidebar-brand-sub">RF · Coverage · Simulation</p>
+            <div class="sidebar-brand">
+                <p class="sidebar-brand-title">5G Coverage Vision</p>
+                <p class="sidebar-brand-sub">RF · Simulation · Coverage</p>
+            </div>
+            <button id="closeSidebar" class="sidebar-close-btn" aria-label="Tutup sidebar">&times;</button>
         </div>
 
         <!-- Navigation -->
@@ -35,78 +33,92 @@
 
             <span class="sidebar-section-label">Main</span>
 
-            <a href="{{ url_for('main') }}" class="sidebar-link {% if request.endpoint == 'main' %}active{% endif %}">
-                <span class="icon">🏠</span>
-                <span class="text">Dashboard</span>
+            <a href="{{ url_for('main') }}"
+               class="sidebar-link {% if request.endpoint == 'main' %}active{% endif %}">
+                <span class="sidebar-icon">🏠</span>
+                <span class="sidebar-text">Dashboard</span>
             </a>
 
             <span class="sidebar-section-label">Perencanaan</span>
 
-            <a href="{{ url_for('route') }}" class="sidebar-link {% if request.endpoint == 'route' %}active{% endif %}">
-                <span class="icon">🗺️</span>
-                <span class="text">Perencanaan Rute</span>
+            <a href="{{ url_for('route') }}"
+               class="sidebar-link {% if request.endpoint == 'route' %}active{% endif %}">
+                <span class="sidebar-icon">🗺️</span>
+                <span class="sidebar-text">Perencanaan Rute</span>
             </a>
 
-            <a href="{{ url_for('newsite') }}" class="sidebar-link {% if request.endpoint == 'newsite' %}active{% endif %}">
-                <span class="icon">📍</span>
-                <span class="text">Perencanaan Site Baru</span>
+            <a href="{{ url_for('newsite') }}"
+               class="sidebar-link {% if request.endpoint == 'newsite' %}active{% endif %}">
+                <span class="sidebar-icon">📍</span>
+                <span class="sidebar-text">Perencanaan Site Baru</span>
             </a>
 
             <span class="sidebar-section-label">Simulasi</span>
 
-            <a href="{{ url_for('drivetest') }}" class="sidebar-link {% if request.endpoint == 'drivetest' %}active{% endif %}">
-                <span class="icon">📡</span>
-                <span class="text">Simulasi Drive Test</span>
+            <a href="{{ url_for('simulationroute') }}"
+               class="sidebar-link {% if request.endpoint == 'simulationroute' %}active{% endif %}">
+                <span class="sidebar-icon">📡</span>
+                <span class="sidebar-text">Drive Test Based Route</span>
             </a>
 
-            <a href="{{ url_for('simulation_dt') }}" class="sidebar-link {% if request.endpoint == 'simulation_dt' %}active{% endif %}">
-                <span class="icon">🚗</span>
-                <span class="text">Simulasi Based On Route</span>
+            <a href="{{ url_for('simulation_dt') }}"
+               class="sidebar-link {% if request.endpoint == 'simulation_dt' %}active{% endif %}">
+                <span class="sidebar-icon">🚗</span>
+                <span class="sidebar-text">Drive Test Based Real</span>
             </a>
 
-            <a href="{{ url_for('coverage') }}" class="sidebar-link {% if request.endpoint == 'coverage' %}active{% endif %}">
-                <span class="icon">📶</span>
-                <span class="text">Simulasi Coverage</span>
+            <a href="{{ url_for('coverage') }}"
+               class="sidebar-link {% if request.endpoint == 'coverage' %}active{% endif %}">
+                <span class="sidebar-icon">📶</span>
+                <span class="sidebar-text">Simulasi Coverage</span>
             </a>
 
             <span class="sidebar-section-label">Analisis</span>
 
-            <a href="{{ url_for('analysis') }}" class="sidebar-link {% if request.endpoint == 'analysis' %}active{% endif %}">
-                <span class="icon">📊</span>
-                <span class="text">Analisis Perbandingan Drive Test</span>
+            <a href="{{ url_for('analysis') }}"
+               class="sidebar-link {% if request.endpoint == 'analysis' %}active{% endif %}">
+                <span class="sidebar-icon">📊</span>
+                <span class="sidebar-text">Komparasi Drive Test</span>
             </a>
 
-            <a href="{{ url_for('coveragecom') }}" class="sidebar-link {% if request.endpoint == 'coveragecom' %}active{% endif %}">
-                <span class="icon">📊</span>
-                <span class="text">Analisis Perbandingan Coverage</span>
+            <a href="{{ url_for('coveragecom') }}"
+               class="sidebar-link {% if request.endpoint == 'coveragecom' %}active{% endif %}">
+                <span class="sidebar-icon">📈</span>
+                <span class="sidebar-text">Komparasi Coverage</span>
             </a>
 
-            <a href="{{ url_for('evaluation') }}" class="sidebar-link {% if request.endpoint == 'evaluation' %}active{% endif %}">
-                <span class="icon">✅</span>
-                <span class="text">Evaluasi Kualitas</span>
+            <a href="{{ url_for('blankspot') }}"
+               class="sidebar-link {% if request.endpoint == 'blankspot' %}active{% endif %}">
+                <span class="sidebar-icon">📈</span>
+                <span class="sidebar-text">Blank Spot Optimizer</span>
             </a>
 
-            <!-- Spacer mendorong logout ke bawah -->
-            <div class="sidebar-spacer"></div>
+            <a href="{{ url_for('evaluation') }}"
+               class="sidebar-link {% if request.endpoint == 'evaluation' %}active{% endif %}">
+                <span class="sidebar-icon">✅</span>
+                <span class="sidebar-text">Evaluasi Akurasi</span>
+            </a>
 
         </nav>
 
-        <!-- Logout — selalu di bawah, terpisah dari nav scroll -->
-        <div class="sidebar-logout">
-            <a href="{{ url_for('welcome') }}" class="sidebar-link logout-link">
-                <span class="icon">🚪</span>
-                <span class="text">Logout</span>
+        <!-- Bottom: User info + Logout -->
+        <div class="sidebar-bottom">
+
+            <a href="{{ url_for('logout') }}" class="sidebar-logout">
+                <span class="sidebar-icon">🚪</span>
+                <span class="sidebar-text">Logout</span>
             </a>
+
         </div>
 
     </aside>
 
-    <!-- SIDEBAR OVERLAY -->
+    <!-- OVERLAY -->
     <div id="sidebarOverlay" class="sidebar-overlay"></div>
 
     <!-- TOGGLE BUTTON -->
-    <button id="toggleSidebarBtn" class="sidebar-toggle-btn">
-        <span class="hamburger">☰</span>
+    <button id="toggleSidebarBtn" class="sidebar-toggle-btn" aria-label="Buka sidebar">
+        ☰
     </button>
 
     <!-- PAGE CONTENT -->

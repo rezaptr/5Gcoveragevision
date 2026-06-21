@@ -76,8 +76,13 @@ def welcome():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+
+    # Kalau sudah login, tidak perlu lihat halaman login lagi
+    if 'role' in session:
+        return redirect(url_for('main'))
+
     if request.method == 'POST':
-        email    = request.form['email']
+        email = request.form['email']
         password = request.form['password']
 
         conn = get_db_connection()
@@ -85,7 +90,8 @@ def login():
             cur = conn.cursor()
             cur.execute("""
                 SELECT id, role, full_name, password, profile_image
-                FROM users WHERE email = %s
+                FROM users
+                WHERE email = %s
             """, (email,))
             user = cur.fetchone()
             cur.close()
@@ -93,15 +99,20 @@ def login():
             release_db_connection(conn)
 
         if user and check_password_hash(user[3], password):
-            session['user_id']       = user[0]
-            session['role']          = user[1]
-            session['full_name']     = user[2]
-            session['email']         = email
+
+            # Bersihkan session lama terlebih dahulu
+            session.clear()
+
+            session['user_id'] = user[0]
+            session['role'] = user[1]
+            session['full_name'] = user[2]
+            session['email'] = email
             session['profile_image'] = user[4]
+
             return redirect(url_for('main'))
-        else:
-            flash("Email atau password salah!")
-            return redirect(url_for('login'))
+
+        flash("Email atau password salah!")
+        return redirect(url_for('login'))
 
     return render_template('login.html')
 
@@ -221,6 +232,7 @@ def main():
     start = time.time()
     result = render_template('main.html')
     print(f"[TIMER] /main render: {time.time() - start:.3f}s")
+    print("SESSION:", dict(session))
     return result
 
 @app.route('/route')
@@ -228,10 +240,10 @@ def main():
 def route():
     return render_template('route.html')
 
-@app.route('/drivetest')
+@app.route('/simulationroute')
 @role_required(['dt_engineer', 'rf_engineer'])
-def drivetest():
-    return render_template('drivetest.html')
+def simulationroute():
+    return render_template('simulationroute.html')
 
 @app.route('/coverage')
 @role_required(['rf_engineer'])
@@ -253,6 +265,11 @@ def evaluation():
 def newsite():
     return render_template('newsite.html')
 
+@app.route('/blankspot')
+@role_required(['rf_engineer'])
+def blankspot():
+    return render_template('blankspot.html')
+
 @app.route('/simulation_dt')
 @role_required(['rf_engineer'])
 def simulation_dt():
@@ -270,6 +287,16 @@ def help_page():
 @app.route('/about')
 def about():
     return render_template('about.html')
+
+@app.route('/logout')
+def logout():
+    print("BEFORE:", dict(session))
+
+    session.clear()
+
+    print("AFTER:", dict(session))
+
+    return redirect(url_for('welcome'))
 
 # ================= API: UPLOAD SITE XLSX =================
 @app.route('/api/upload-site', methods=['POST'])
