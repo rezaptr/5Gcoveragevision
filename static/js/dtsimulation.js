@@ -366,7 +366,7 @@
     byId('btnSimPCI') ?.addEventListener('click',  simulatePCI);
     byId('btnExportCSV')?.addEventListener('click', exportCSV);
     byId('btnExportDtClean')?.addEventListener('click', exportDtClean);
-    byId('btnBackToSim')?.addEventListener('click', () => window.location.href = '/simulation');
+    byId('btnBackToSim')?.addEventListener('click', () => window.location.href = '/main');
     byId('btnDebugSite')?.addEventListener('click', showDebug);
     byId('overrideScenario')?.addEventListener('change', onOverrideChanged);
     byId('overrideCondition')?.addEventListener('change', onOverrideChanged);

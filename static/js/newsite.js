@@ -169,21 +169,42 @@ function computeRSRP(dist, gainDb, hBS, sc, cond, lat, lon, siteId, clutter, P) 
 // Di sini kita benar-benar menghitung RSRP dari setiap neighbour
 // di grid yang sama, lalu jadikan sebagai I dalam formula SINR.
 function computeSINRWithNeighbours(lat, lon, rsrpServing, P) {
-  const S   = dbmToLinear(rsrpServing);
-  const N   = P.THERMAL_NOISE_LIN * INTERFERENCE_MARGIN_FACTOR;
-  let I     = N;
+  const S = dbmToLinear(rsrpServing);
+  let I   = 0; // interferensi murni, noise dipisah
 
   neighbourSites.forEach(nb => {
-    const dist   = calcDistance({ lat, lng: lon }, { lat: nb.lat, lng: nb.lng });
-    const brng   = bearingTo(nb.lat, nb.lng, lat, lon);
+    const dist = calcDistance({ lat, lng: lon }, { lat: nb.lat, lng: nb.lng });
+
+    // Skip neighbour yang terlalu jauh — sinyal mereka sudah di bawah noise floor
+    // Threshold: jika jarak > 5x radius coverage, pengaruhnya negligible
+    const radius = parseInt(document.getElementById('radiusPure')?.value) || 500;
+    if (dist > radius * 5) return;
+
+    const brng    = bearingTo(nb.lat, nb.lng, lat, lon);
     const sectors = normalizeSectors(nb);
-    const gainDb  = sectors.length ? bestSectorGain(brng, sectors, P.BEAMWIDTH, P.ANTENNA_Am).gain : 0;
-    const rsrpNb  = computeRSRP(dist, gainDb, nb.height || 30, P.SCENARIO, P.CONDITION, lat, lon, nb.id, P.CLUTTER, P);
-    const thresholdDbm = rsrpServing - DOMINANT_INTERFERER_THRESHOLD_DB;
-    if (rsrpNb >= thresholdDbm) I += dbmToLinear(rsrpNb);
+    const gainDb  = sectors.length
+      ? bestSectorGain(brng, sectors, P.BEAMWIDTH, P.ANTENNA_Am).gain
+      : 0;
+
+    const rsrpNb = computeRSRP(
+      dist, gainDb, nb.height || 30,
+      P.SCENARIO, P.CONDITION,
+      lat, lon, nb.id, P.CLUTTER, P
+    );
+
+    // Clamp ke RX floor — sinyal di bawah floor tidak relevan
+    const rsrpNbClamped = Math.max(RX_SENSITIVITY_FLOOR, rsrpNb);
+
+    // Hanya hitung sebagai interferer jika cukup kuat
+    // (tidak lebih lemah dari serving - DOMINANT_INTERFERER_THRESHOLD_DB)
+    if (rsrpServing - rsrpNbClamped < DOMINANT_INTERFERER_THRESHOLD_DB) {
+      I += dbmToLinear(rsrpNbClamped) * INTERFERENCE_MARGIN_FACTOR;
+    }
   });
 
-  return Math.max(P.SINR_FLOOR, Math.min(P.SINR_CEIL, linearToDbm(S / I)));
+  // SINR = S / (I + N) — noise sebagai floor minimum
+  const sinr_lin = S / (I + P.THERMAL_NOISE_LIN);
+  return Math.max(P.SINR_FLOOR, Math.min(P.SINR_CEIL, linearToDbm(sinr_lin)));
 }
 
 // ── Color & category ──────────────────────────────────────────────────────

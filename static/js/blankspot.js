@@ -395,25 +395,46 @@ function runOptimization() {
 // key = "lat_lon" rounded ke gridSize
 // ─────────────────────────────────────────────────
 function computeNewSiteRSRP(P, gridSize, radius, antennaH) {
-  const lat0=currentSiteLocation.lat, lng0=currentSiteLocation.lng;
-  const mpdLat=111320, mpdLon=111320*Math.cos(lat0*Math.PI/180);
-  const dLat=gridSize/mpdLat, dLon=gridSize/mpdLon;
-  const minLat=lat0-radius/mpdLat, maxLat=lat0+radius/mpdLat;
-  const minLon=lng0-radius/mpdLon, maxLon=lng0+radius/mpdLon;
+  const lat0 = currentSiteLocation.lat, lng0 = currentSiteLocation.lng;
+  const mpdLat = 111320;
+  const mpdLon = 111320 * Math.cos(lat0 * Math.PI / 180);
+  const dLat = gridSize / mpdLat;
+  const dLon = gridSize / mpdLon;
+  const minLat = lat0 - radius / mpdLat, maxLat = lat0 + radius / mpdLat;
+  const minLon = lng0 - radius / mpdLon, maxLon = lng0 + radius / mpdLon;
   const rsrpMap = new Map();
-  for(let lat=minLat; lat<=maxLat; lat+=dLat) {
-    for(let lon=minLon; lon<=maxLon; lon+=dLon) {
-      const dist=calcDist({lat:lat0,lng:lng0},{lat,lng:lon});
-      if(dist>radius) continue;
-      const brng=bearing(lat0,lng0,lat,lon);
-      const gainDb=bestGain(brng,azimuths,P.BEAMWIDTH,P.ANTENNA_Am);
-      const rsrp=computeRSRP(dist,gainDb,antennaH,P.SCENARIO,P.CONDITION,lat,lon,'SITE_BARU',P.CLUTTER,P);
-      const rsrpC=Math.max(RX_FLOOR, rsrp);
-      const cellDeg = gridSize/mpdLat;
-      const key = Math.round(lat/cellDeg)+','+Math.round(lon/cellDeg);
-      rsrpMap.set(key, rsrpC);
+
+  for (let lat = minLat; lat <= maxLat; lat += dLat) {
+    for (let lon = minLon; lon <= maxLon; lon += dLon) {
+      const dist = calcDist({ lat: lat0, lng: lng0 }, { lat, lng: lon });
+      if (dist > radius) continue;
+      const brng   = bearing(lat0, lng0, lat, lon);
+      const gainDb = bestGain(brng, azimuths, P.BEAMWIDTH, P.ANTENNA_Am);
+      const rsrp   = computeRSRP(dist, gainDb, antennaH, P.SCENARIO, P.CONDITION, lat, lon, 'SITE_BARU', P.CLUTTER, P);
+      const rsrpC  = Math.max(RX_FLOOR, rsrp);
+
+      // KEY: gunakan index integer dari lat dan lon masing-masing
+      const iLat = Math.round(lat / dLat);
+      const iLon = Math.round(lon / dLon);
+      const key  = `${iLat},${iLon}`;
+
+      // Simpan juga bounds grid untuk render
+      const half_lat = dLat / 2;
+      const half_lon = dLon / 2;
+      rsrpMap.set(key, {
+        rsrp: rsrpC,
+        lat, lon,
+        bounds: [
+          [lat - half_lat, lon - half_lon],
+          [lat - half_lat, lon + half_lon],
+          [lat + half_lat, lon + half_lon],
+          [lat + half_lat, lon - half_lon],
+        ]
+      });
     }
   }
+
+  console.log('[BSO] newSiteRSRP size:', rsrpMap.size);
   return rsrpMap;
 }
 
@@ -426,67 +447,72 @@ function computeNewSiteRSRP(P, gridSize, radius, antennaH) {
 //   4. Hanya update grid yang sudah ada di before (denominator konsisten)
 // ─────────────────────────────────────────────────
 function overlayGridsWithSINR(beforeGrids, newSiteRSRP, P) {
-  const mpdLat = 111320;
   const gridSize = parseInt(document.getElementById('gridGap')?.value) || 50;
-  const cellDeg = gridSize / mpdLat;
+  const mpdLat   = 111320;
+  const mpdLon   = 111320 * Math.cos(currentSiteLocation.lat * Math.PI / 180);
+  const dLat     = gridSize / mpdLat;
+  const dLon     = gridSize / mpdLon;
 
-  return beforeGrids.map(g => {
+  const beforeKeys = new Set();
+
+  // Update grid existing
+  const updatedGrids = beforeGrids.map(g => {
     const gridCopy = { ...g };
-    const key = Math.round(g.lat/cellDeg)+','+Math.round((g.lon||g.lng)/cellDeg);
-    const newRSRP = newSiteRSRP.get(key); // undefined jika di luar radius site baru
+    const gLat = g.lat;
+    const gLon = g.lon ?? g.lng;
+    const iLat = Math.round(gLat / dLat);
+    const iLon = Math.round(gLon / dLon);
+    const key  = `${iLat},${iLon}`;
+    beforeKeys.add(key);
 
-    // Kumpulkan semua sinyal yang masuk ke grid ini
-    // existing RSRP sudah ada di g.rsrpValue (dari snapshot coverage)
-    // Jika snapshot punya info per-site, gunakan itu; fallback ke single value
+    const entry   = newSiteRSRP.get(key);
+    const newRSRP = entry?.rsrp;
+
     const allSignals = [];
-
-    // RSRP dari existing sites (dari snapshot)
-    if (g.allSiteRSRP && Array.isArray(g.allSiteRSRP)) {
-      // Ideal: snapshot sudah simpan RSRP per site
-      g.allSiteRSRP.forEach(r => allSignals.push(r));
-    } else {
-      // Fallback: pakai rsrpValue existing sebagai sinyal dominan
-      allSignals.push(g.rsrpValue);
-      // Estimasi interferer dari site lain berdasarkan sinrValue before
-      // SINR_before = serving / (I + N) → I = serving/10^(SINR/10) - N
-      if (g.sinrValue !== undefined) {
-        const serving_lin = dbm2lin(g.rsrpValue);
-        const sinr_lin = Math.pow(10, g.sinrValue/10);
-        const interference_lin = Math.max(0, serving_lin/sinr_lin - P.THERMAL_NOISE_LIN);
-        // Representasikan total interferensi sebagai satu nilai ekuivalen
-        if (interference_lin > 0) {
-          allSignals.push(lin2dbm(interference_lin / IM_FACTOR));
-        }
-      }
+    allSignals.push(g.rsrpValue);
+    if (g.sinrValue !== undefined) {
+      const serving_lin      = dbm2lin(g.rsrpValue);
+      const sinr_lin         = Math.pow(10, g.sinrValue / 10);
+      const interference_lin = Math.max(0, serving_lin / sinr_lin - P.THERMAL_NOISE_LIN);
+      if (interference_lin > 0) allSignals.push(lin2dbm(interference_lin / IM_FACTOR));
     }
 
     if (newRSRP !== undefined) {
-      // Site baru punya sinyal di grid ini
       allSignals.push(newRSRP);
-
       if (newRSRP > g.rsrpValue) {
-        // Site baru jadi serving cell
-        gridCopy.rsrpValue = newRSRP;
+        gridCopy.rsrpValue    = newRSRP;
         gridCopy.servingSiteId = 'SITE_BARU';
       }
-      // Hitung ulang SINR dengan semua sinyal (existing + baru)
-      const servingRSRP = gridCopy.rsrpValue; // serving = yang tertinggi
-      gridCopy.sinrValue = computeSINR(servingRSRP, allSignals, P);
+      gridCopy.sinrValue = computeSINR(gridCopy.rsrpValue, allSignals, P);
     } else {
-      // Site baru tidak menjangkau grid ini
-      // Jika sinrValue sudah ada dari snapshot, pakai itu
-      // Jika tidak ada, estimasi dari rsrpValue
       if (g.sinrValue === undefined) {
         gridCopy.sinrValue = computeSINR(g.rsrpValue, allSignals, P);
       }
-      // sinrValue before tetap sama = tidak berubah
     }
 
     return gridCopy;
   });
 
-  // CATATAN: Grid baru di luar area before TIDAK ditambahkan
-  // Ini menjaga denominator before = denominator after (konsisten)
+  // Tambah grid BARU dari site baru yang tidak overlap dengan before
+  let newGridCount = 0;
+  newSiteRSRP.forEach((entry, key) => {
+    if (beforeKeys.has(key)) return;
+    const sinrValue = computeSINR(entry.rsrp, [entry.rsrp], P);
+    updatedGrids.push({
+      lat: entry.lat,
+      lon: entry.lon,
+      lng: entry.lon,
+      bounds: entry.bounds,
+      rsrpValue: entry.rsrp,
+      sinrValue,
+      servingSiteId: 'SITE_BARU',
+      _isNew: true,
+    });
+    newGridCount++;
+  });
+
+  console.log('[BSO] before grids:', beforeGrids.length, '| new grids added:', newGridCount, '| total after:', updatedGrids.length);
+  return updatedGrids;
 }
 
 function renderAfterMap(grids) {
@@ -525,42 +551,44 @@ function renderSectorFans() {
 // ─────────────────────────────────────────────────
 function renderDeltaPanel(before, after) {
   const gridSize = parseInt(document.getElementById('gridGap')?.value) || 50;
-  const bStats=calcStats(before), aStats=calcStats(after);
-  const gridKm2=(gridSize/1000)**2;
-
-  // Denominator sama karena after.length === before.length
+  const afterForStats = after.filter(g => !g._isNew); // denominator konsisten
+  const bStats = calcStats(before);
+  const aStats = calcStats(afterForStats);
+  const gridKm2 = (gridSize / 1000) ** 2;
   const total = before.length || 1;
 
-  const verdict=calcVerdict(bStats, aStats, total);
+  const verdict = calcVerdict(bStats, aStats, total);
 
-  const blankBefore=((bStats.cats.S5||0)+(bStats.cats.S6||0))*gridKm2;
-  const blankAfter =((aStats.cats.S5||0)+(aStats.cats.S6||0))*gridKm2;
-  const blankDelta = blankBefore - blankAfter;
-  const s1B = ((bStats.cats.S1||0)/total*100).toFixed(1);
-  const s1A = ((aStats.cats.S1||0)/total*100).toFixed(1);
-  const s1D = verdict.s1Delta;
-  const sign = d => d>=0 ? '+' : '';
+  const blankBefore = ((bStats.cats.S5||0) + (bStats.cats.S6||0)) * gridKm2;
+  const blankAfter  = ((aStats.cats.S5||0) + (aStats.cats.S6||0)) * gridKm2;
+  const blankDelta  = blankBefore - blankAfter;
+
+  // S1+S2+S3 untuk perbandingan utama
+  const s123B = ((bStats.cats.S1||0) + (bStats.cats.S2||0) + (bStats.cats.S3||0)) / total * 100;
+  const s123A = ((aStats.cats.S1||0) + (aStats.cats.S2||0) + (aStats.cats.S3||0)) / total * 100;
+  const s123D = s123A - s123B;
+  const sign = d => d >= 0 ? '+' : '';
 
   let verdictHtml;
-  if (verdict.anyImprovement && s1D > 20) {
-    verdictHtml = `<div class="bso-verdict good">✅ <b>Optimalisasi Berhasil</b> — Excellent naik <b>${sign(s1D)}${s1D.toFixed(1)}%</b></div>`;
+  if (verdict.anyImprovement && s123D > 20) {
+    verdictHtml = `<div class="bso-verdict good">✅ <b>Optimalisasi Berhasil</b> — Coverage layak naik <b>${sign(s123D)}${s123D.toFixed(1)}%</b></div>`;
   } else if (verdict.anyImprovement) {
-    verdictHtml = `<div class="bso-verdict ok">⚠️ <b>Ada Peningkatan</b> — Coverage membaik di beberapa kategori. Coba geser lokasi atau naikkan tinggi antena untuk hasil lebih optimal.</div>`;
+    verdictHtml = `<div class="bso-verdict ok">⚠️ <b>Ada Peningkatan</b> — Coverage membaik. Coba geser lokasi atau naikkan tinggi antena untuk hasil lebih optimal.</div>`;
   } else {
     verdictHtml = `<div class="bso-verdict bad">🔴 <b>Tidak Ada Peningkatan</b> — Pertimbangkan lokasi atau parameter berbeda.</div>`;
   }
 
-  const el=document.getElementById('bsoDeltaPanel');
+  const el = document.getElementById('bsoDeltaPanel');
   if (!el) return;
   el.innerHTML = `
     ${verdictHtml}
     <div class="bso-delta-grid">
       <div class="bso-delta-box gain">
-        <span class="bso-dv">${sign(s1D)}${s1D.toFixed(1)}%</span>
-        <span class="bso-dl">Δ Excellent (S1)</span>
+        <span class="bso-dv">${sign(s123D)}${s123D.toFixed(1)}%</span>
+        <span class="bso-dl">Δ Coverage Layak (S1+S2+S3)</span>
       </div>
       <div class="bso-delta-box blank">
-        <span class="bso-dv">${blankDelta>=0?'-':'+'}${Math.abs(blankDelta).toFixed(3)} km²</span>
+        <span class="bso-dv">${blankDelta >= 0 ? '-' : '+'}${Math.abs(blankDelta).toFixed(3)} km²</span>
         <span class="bso-dl">Blank Spot Berkurang</span>
       </div>
     </div>
@@ -569,36 +597,39 @@ function renderDeltaPanel(before, after) {
         <thead><tr><th>Kategori</th><th>Before</th><th>After</th><th>Δ</th></tr></thead>
         <tbody>
           ${['S1','S2','S3','S4','S5'].map(cat => {
-            const b=((bStats.cats[cat]||0)/total*100).toFixed(1);
-            const a=((aStats.cats[cat]||0)/total*100).toFixed(1);
-            const d=(parseFloat(a)-parseFloat(b)).toFixed(1);
-            const cls=parseFloat(d)>0.5?'pos':parseFloat(d)<-0.5?'neg':'neu';
-            const labels={S1:'Excellent',S2:'Good',S3:'Moderate',S4:'Poor',S5:'Bad/Blank'};
+            const b = ((bStats.cats[cat]||0) / total * 100).toFixed(1);
+            const a = ((aStats.cats[cat]||0) / total * 100).toFixed(1);
+            const d = (parseFloat(a) - parseFloat(b)).toFixed(1);
+            const cls = parseFloat(d) > 0.5 ? 'pos' : parseFloat(d) < -0.5 ? 'neg' : 'neu';
+            const labels = { S1:'Excellent (≥-85)', S2:'Good (-95~-85)', S3:'Moderate (-105~-95)', S4:'Poor (-120~-105)', S5:'Bad/Blank (<-120)' };
             return `<tr><td>${labels[cat]}</td><td>${b}%</td><td class="col-after">${a}%</td><td class="${cls}">${parseFloat(d)>0?'+':''}${d}%</td></tr>`;
           }).join('')}
         </tbody>
       </table>
     </div>
     <p style="font-size:10.5px;color:#888;margin:8px 0 0;">📊 Denominator: <b>${total} grid (konsisten before & after)</b></p>`;
-  el.style.display='block';
+  el.style.display = 'block';
 }
 
 function calcVerdict(bStats, aStats, total) {
-  const goodCats = ['S1','S2','S3'];
-  const badCats  = ['S4','S5','S6'];
+  const goodCats = ['S1', 'S2', 'S3']; // S3 = Moderate = layak
+  const badCats  = ['S4', 'S5', 'S6'];
   let totalGoodImprovement = 0, totalBadReduction = 0, anyImprovement = false;
   goodCats.forEach(c => {
-    const b = (bStats.cats[c]||0)/total*100;
-    const a = (aStats.cats[c]||0)/total*100;
-    if (a - b > 0.5) { totalGoodImprovement += (a-b); anyImprovement = true; }
+    const b = (bStats.cats[c]||0) / total * 100;
+    const a = (aStats.cats[c]||0) / total * 100;
+    if (a - b > 0.5) { totalGoodImprovement += (a - b); anyImprovement = true; }
   });
   badCats.forEach(c => {
-    const b = (bStats.cats[c]||0)/total*100;
-    const a = (aStats.cats[c]||0)/total*100;
-    if (b - a > 0.5) { totalBadReduction += (b-a); anyImprovement = true; }
+    const b = (bStats.cats[c]||0) / total * 100;
+    const a = (aStats.cats[c]||0) / total * 100;
+    if (b - a > 0.5) { totalBadReduction += (b - a); anyImprovement = true; }
   });
-  const s1Delta = ((aStats.cats.S1||0)/total*100) - ((bStats.cats.S1||0)/total*100);
-  return { anyImprovement, totalGoodImprovement, totalBadReduction, s1Delta };
+  const s123Delta = (
+    ((aStats.cats.S1||0) + (aStats.cats.S2||0) + (aStats.cats.S3||0)) -
+    ((bStats.cats.S1||0) + (bStats.cats.S2||0) + (bStats.cats.S3||0))
+  ) / total * 100;
+  return { anyImprovement, totalGoodImprovement, totalBadReduction, s1Delta: s123Delta };
 }
 
 function calcStats(grids) {
@@ -618,25 +649,37 @@ function updateMiniStats(which, grids) {
   el.innerHTML=renderMiniStatHTML(stats, which==='before'?'Before':'After', color);
 }
 function renderMiniStatHTML(stats, label, color) {
-  const total=stats.total||1;
-  const s12=((stats.cats.S1||0)+(stats.cats.S2||0))/total*100;
-  return `<div class="bso-mini-stat" style="border-left-color:${color}"><span class="bso-ms-label">${label}</span><span class="bso-ms-val">${s12.toFixed(1)}%</span><span class="bso-ms-sub">S1+S2 (${stats.total} grid)</span></div>`;
+  const total = stats.total || 1;
+  const s123 = ((stats.cats.S1||0) + (stats.cats.S2||0) + (stats.cats.S3||0)) / total * 100;
+  return `<div class="bso-mini-stat" style="border-left-color:${color}"><span class="bso-ms-label">${label}</span><span class="bso-ms-val">${s123.toFixed(1)}%</span><span class="bso-ms-sub">S1+S2+S3 (${stats.total} grid)</span></div>`;
 }
 
 function updateLegend(which, grids) {
-  const elId=which==='before'?'bsoLegendBefore':'bsoLegendAfter';
-  const el=document.getElementById(elId);
-  const tbody=document.getElementById(elId+'Body');
-  if (!el||!tbody) return;
-  el.style.display='block';
-  el.querySelector('.bso-legend-title').textContent = currentCoverageType==='rsrp' ? 'RSRP (dBm)' : 'SINR (dB)';
-  const metric=currentCoverageType;
-  const rows=metric==='rsrp'
-    ?[{cat:'S1',color:'#0042a5',range:'-85 ~ 0'},{cat:'S2',color:'#00a955',range:'-95 ~ -85'},{cat:'S3',color:'#70ff66',range:'-105 ~ -95'},{cat:'S4',color:'#fffb00',range:'-120 ~ -105'},{cat:'S5',color:'#ff3333',range:'< -120'}]
-    :[{cat:'S1',color:'#0042a5',range:'≥ 20 dB'},{cat:'S2',color:'#00a955',range:'10 ~ 20'},{cat:'S3',color:'#70ff66',range:'0 ~ 10'},{cat:'S4',color:'#fffb00',range:'-5 ~ 0'},{cat:'S5',color:'#ff3333',range:'< -5'}];
-  const total=grids.length||1;
-  tbody.innerHTML=rows.map(r=>{
-    const v=grids.filter(g=>getCat(metric,metric==='rsrp'?g.rsrpValue:(g.sinrValue??g.rsrpValue))===r.cat).length;
+  const elId  = which === 'before' ? 'bsoLegendBefore' : 'bsoLegendAfter';
+  const el    = document.getElementById(elId);
+  const tbody = document.getElementById(elId + 'Body');
+  if (!el || !tbody) return;
+  el.style.display = 'block';
+  el.querySelector('.bso-legend-title').textContent = currentCoverageType === 'rsrp' ? 'RSRP (dBm)' : 'SINR (dB)';
+  const metric = currentCoverageType;
+  const rows = metric === 'rsrp'
+    ? [
+        { cat:'S1', color:'#0042a5', range:'-85 ~ 0' },
+        { cat:'S2', color:'#00a955', range:'-95 ~ -85' },
+        { cat:'S3', color:'#70ff66', range:'-105 ~ -95' },
+        { cat:'S4', color:'#fffb00', range:'-120 ~ -105' },
+        { cat:'S5', color:'#ff3333', range:'-140 ~ -120' },   // fix: was "< -120"
+      ]
+    : [
+        { cat:'S1', color:'#0042a5', range:'≥ 20 dB' },
+        { cat:'S2', color:'#00a955', range:'10 ~ 20 dB' },
+        { cat:'S3', color:'#70ff66', range:'0 ~ 10 dB' },
+        { cat:'S4', color:'#fffb00', range:'-5 ~ 0 dB' },
+        { cat:'S5', color:'#ff3333', range:'-10 ~ -5 dB' },   // fix: was "< -5"
+      ];
+  const total = grids.length || 1;
+  tbody.innerHTML = rows.map(r => {
+    const v = grids.filter(g => getCat(metric, metric==='rsrp' ? g.rsrpValue : (g.sinrValue ?? g.rsrpValue)) === r.cat).length;
     return `<tr><td><div style="width:12px;height:12px;background:${r.color};border-radius:2px;display:inline-block;"></div></td><td>${r.range}</td><td><b>${(v/total*100).toFixed(1)}%</b></td></tr>`;
   }).join('');
 }

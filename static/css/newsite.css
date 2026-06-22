@@ -118,27 +118,27 @@
   position: absolute;
   top: 16px; right: 16px;
   background: rgba(255,255,255,0.96);
-  padding: 14px;
+  padding: 10px 12px;
   border-radius: 10px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.18);
   z-index: 1000;
-  min-width: 230px;
+  min-width: 190px;
   backdrop-filter: blur(8px);
 }
 .map-legend h4 {
-  margin: 0 0 9px;
-  font-size: 13px;
+  margin: 0 0 7px;
+  font-size: 12px;
   font-weight: 700;
   color: #1F3C88;
   border-bottom: 2px solid #1F3C88;
   padding-bottom: 5px;
 }
-.map-legend table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.map-legend table { width: 100%; border-collapse: collapse; font-size: 11px; }
 .map-legend thead th {
-  background: #f0f2f8; padding: 5px 4px;
+  background: #f0f2f8; padding: 4px 4px;
   font-weight: 600; text-align: left; border-bottom: 1px solid #ddd;
 }
-.map-legend tbody td { padding: 5px 4px; border-bottom: 1px solid #f0f0f0; }
+.map-legend tbody td { padding: 3px 4px; border-bottom: 1px solid #f0f0f0; }
 .map-legend tbody tr:last-child td { border-bottom: none; }
 
 /* ── PANEL KANAN ─────────────────────────────────── */
