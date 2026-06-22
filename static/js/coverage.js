@@ -642,6 +642,10 @@ function updateStats(grids,antHeight,allSites,gaps,P){
   const avgISD=allSites.length>1?(allSites.slice(1).reduce((s,x)=>s+calcDistance({lat:mainSite.lat,lng:mainSite.lng},{lat:x.site.lat,lng:x.site.lng}),0)/(allSites.length-1)).toFixed(0):'-';
   const ml=`${P.SCENARIO.toUpperCase()} ${P.CONDITION.toUpperCase().replace('_','/')}`;
 
+  let html='<div class="analysis-text">';
+  html+=`<div style="padding:7px 10px;background:#eef3ff;border-left:3px solid #1F3C88;border-radius:5px;font-size:11.5px;margin-bottom:10px;line-height:1.6;">`;
+  html+=`<b>${ml}</b> &nbsp;|&nbsp; <b>${antHeight}m</b> &nbsp;|&nbsp; <b>${P.FREQUENCY}/${P.BANDWIDTH} MHz</b> &nbsp;|&nbsp; <b>${P.TX_POWER} dBm</b> &nbsp;|&nbsp; <b>${allSites.length} site</b> &nbsp;|&nbsp; ISD <b>${avgISD}m</b></div>`;
+
   if(s1Pct>50) html+=`<div class="analysis-success"><strong>Coverage Sangat Baik</strong><br>${s1Pct.toFixed(1)}% area excellent.</div>`;
   else if(poorPct>40) html+=`<div class="analysis-warning"><strong>Coverage Perlu Perhatian</strong><br>${poorPct.toFixed(1)}% ${type} buruk.</div>`;
   else html+=`<div class="analysis-highlight"><strong>Coverage Memadai</strong><br>${s2Pct.toFixed(1)}% kategori good.</div>`;
