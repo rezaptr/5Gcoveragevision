@@ -74,13 +74,7 @@ const SHADOW_STD_3GPP = {
     metropolitan: 0.0,  // dari 8.0
     urban: 0.0,         // dari 5.0
     suburban: 1.0,      // dari 2.5 — sedikit masih ok
-    sub_urban: 1.0,
     rural: 0.5,
-    open: 0.0,
-    industrial: 2.0,    // dari 6.0
-    forest: 3.0,        // dari 9.0 — forest genuine tambahan
-    water: -1.0,
-    highway: -1.5,
     'n/a': 0.0,         // dari 3.0
   };
 

@@ -1,11 +1,10 @@
 'use strict';
 // ================================================
-// BLANK SPOT OPTIMIZER v2.0
-// - Layout: dual map kiri, panel kanan
-// - Before = SELURUH grid snapshot (bukan hanya gap)
-// - After  = Before + overlay site baru
-// - Viz switch (RSRP/SINR) sync kedua peta sekaligus
-// - Verdict logic: lihat improvement di tabel, bukan hanya S1+S2
+// BLANK SPOT OPTIMIZER v2.1 — FIXED
+// Perbaikan:
+// 1. SINR dihitung dengan interferensi dari semua site (existing + baru)
+// 2. overlayGrids update sinrValue dengan benar
+// 3. Denominator before/after konsisten (hanya grid overlap)
 // ================================================
 
 let mapBefore, mapAfter;
@@ -101,6 +100,30 @@ function computeRSRP(dist, gainDb, hBS, sc, cond, lat, lon, sid, clutter, P) {
   return P.TX_POWER + gainDb - pathLoss(sc, cond, dist, P.FREQUENCY, hBS, MOBILE_H) - getClutterLoss(clutter) + spatialNoise(lat, lon, getShadowStd(sc, cond), sid);
 }
 
+// ─────────────────────────────────────────────────
+// FIX #1: Hitung SINR yang benar dengan interferensi
+// SINR = S / (I_existing + I_new + N)
+// S    = daya serving cell (site dengan RSRP tertinggi)
+// I    = jumlah daya semua interferer (selain serving)
+// N    = thermal noise
+// ─────────────────────────────────────────────────
+function computeSINR(servingRSRP_dbm, allRSRP_dbm_list, P) {
+  const serving_lin = dbm2lin(servingRSRP_dbm);
+
+  // Kumpulkan semua interferer (selain serving cell)
+  let interference_lin = 0;
+  allRSRP_dbm_list.forEach(rsrp => {
+    if (rsrp === servingRSRP_dbm) return; // skip serving
+    // Hanya hitung interferer yang tidak terlalu lemah (dominance threshold)
+    if (servingRSRP_dbm - rsrp < DOMINANT_THRESHOLD_DB) {
+      interference_lin += dbm2lin(rsrp) * IM_FACTOR;
+    }
+  });
+
+  const sinr_lin = serving_lin / (interference_lin + P.THERMAL_NOISE_LIN);
+  return Math.max(P.SINR_FLOOR, Math.min(P.SINR_CEIL, lin2dbm(sinr_lin)));
+}
+
 // ── Color & category ──────────────────────────────
 function getRSRPColor(v) { if(v>=-85)return'#0042a5';if(v>=-95)return'#00a955';if(v>=-105)return'#70ff66';if(v>=-120)return'#fffb00';if(v>=-140)return'#ff3333';return'#800000'; }
 function getSINRColor(v) { if(v>=20)return'#0042a5';if(v>=10)return'#00a955';if(v>=0)return'#70ff66';if(v>=-5)return'#fffb00';if(v>=-10)return'#ff3333';return'#800000'; }
@@ -144,11 +167,9 @@ function initMaps() {
   mapAfter   = L.map('bsoMapAfter').setView(ctr, 14);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', tile).addTo(mapBefore);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', tile).addTo(mapAfter);
-  // Sync kedua peta
   let syncing = false;
   const sync = (src, dst) => src.on('move', () => { if(syncing) return; syncing=true; dst.setView(src.getCenter(),src.getZoom(),{animate:false}); syncing=false; });
   sync(mapBefore, mapAfter); sync(mapAfter, mapBefore);
-  // Klik peta after → set site
   mapAfter.on('click', e => {
     document.getElementById('latSite').value = e.latlng.lat.toFixed(6);
     document.getElementById('lngSite').value = e.latlng.lng.toFixed(6);
@@ -193,14 +214,14 @@ function loadSessionData() {
     clusterSnapshot = JSON.parse(savedSnap);
     prefillFromSession();
     renderExistingMarkers();
-    renderBeforeMap();   // Before = seluruh snapshot grid
+    renderBeforeMap();
     showGapInfo();
   } catch(e) { console.error('[BSO]', e); showNoSessionState(); }
 }
 
 function showNoSessionState() {
   const el = document.getElementById('bsoGapInfo');
-  if (el) el.innerHTML = `<div class="bso-alert warn"><i class="fas fa-exclamation-triangle"></i><div><b>Tidak ada data gap dari halaman coverage.</b><br>Kembali ke halaman coverage dan klik blank spot untuk memulai, atau definisikan area gap manual via klik di peta.</div></div>`;
+  if (el) el.innerHTML = `<div class="bso-alert warn"><i class="fas fa-exclamation-triangle"></i><div><b>Tidak ada data gap dari halaman coverage.</b><br>Kembali ke halaman coverage dan klik blank spot untuk memulai.</div></div>`;
 }
 
 function prefillFromSession() {
@@ -219,7 +240,6 @@ function prefillFromSession() {
     set('scenarioGap', p.SCENARIO); set('conditionGap', p.CONDITION); set('clutterGap', p.CLUTTER);
     if (clusterSnapshot.gridSize) set('gridGap', clusterSnapshot.gridSize);
   }
-  // Prefill site lokasi
   if (gapData.recommendedLat && gapData.recommendedLng) {
     currentSiteLocation = { lat: gapData.recommendedLat, lng: gapData.recommendedLng };
     placeSiteMarker(gapData.recommendedLat, gapData.recommendedLng);
@@ -244,11 +264,10 @@ function showGapInfo() {
         <div><span class="bso-meta-label">Radius</span><span class="bso-meta-val">~${gapData.estimatedRadius_m||'?'} m</span></div>
         <div><span class="bso-meta-label">Site Terdekat</span><span class="bso-meta-val" style="color:#1F3C88;font-weight:700">${gapData.nearestSiteId||'?'}</span></div>
       </div>
-      <p class="bso-gap-note">📍 Analisis Before/After pada seluruh area simulasi. Denominator = total grid snapshot.</p>
+      <p class="bso-gap-note">📍 Perbandingan Before/After pada grid yang sama (denominator konsisten).</p>
     </div>`;
 }
 
-// ── Markers existing sites ─────────────────────────
 function renderExistingMarkers() {
   if (!clusterSnapshot) return;
   [mapBefore, mapAfter].forEach(m => {
@@ -262,7 +281,6 @@ function renderExistingMarkers() {
         .bindTooltip(n.id).addTo(m);
     });
   });
-  // Gap centroid marker
   if (gapCenterLat && gapCenterLng) {
     [mapBefore, mapAfter].forEach(m => {
       L.circleMarker([gapCenterLat, gapCenterLng], { radius:10, fillColor:'#ff3b30', color:'#fff', weight:2.5, fillOpacity:0.7 })
@@ -273,15 +291,14 @@ function renderExistingMarkers() {
   }
 }
 
-// ── BEFORE MAP — seluruh grid snapshot ────────────
 function renderBeforeMap() {
   if (!clusterSnapshot?.grids?.length) return;
   if (beforeLayerGroup) { mapBefore.removeLayer(beforeLayerGroup); }
   beforeLayerGroup = L.layerGroup().addTo(mapBefore);
   const metric = currentCoverageType;
-  gapGridsBefore = clusterSnapshot.grids; // semua grid, bukan hanya gap
+  gapGridsBefore = clusterSnapshot.grids;
   gapGridsBefore.forEach(g => {
-    const val = metric==='rsrp' ? g.rsrpValue : (g.sinrValue??g.rsrpValue);
+    const val = metric==='rsrp' ? g.rsrpValue : (g.sinrValue ?? g.rsrpValue);
     const v   = Math.round(val*10)/10;
     const color = getColor(metric, v);
     L.polygon(g.bounds, { color, fillColor:color, fillOpacity:0.72, weight:0 })
@@ -292,7 +309,6 @@ function renderBeforeMap() {
   updateMiniStats('before', gapGridsBefore);
 }
 
-// ── Site marker ────────────────────────────────────
 function setSiteFromInput() {
   const lat = parseFloat(document.getElementById('latSite').value);
   const lng = parseFloat(document.getElementById('lngSite').value);
@@ -315,7 +331,6 @@ function placeSiteMarker(lat, lng) {
   document.getElementById('bsoSiteLocInfo').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
 
-// ── Azimuth ────────────────────────────────────────
 function generateAzimuthInputs() {
   const container = document.getElementById('azimuthsGap');
   if (!container) return;
@@ -329,7 +344,6 @@ function generateAzimuthInputs() {
     grp.innerHTML = `<label><span class="bso-dot" style="background:${color}"></span>Sek ${i+1}</label><input type="number" id="gaz${i}" value="${defaultAz}" min="0" max="359" step="1">`;
     container.appendChild(grp);
   }
-  // Auto-suggest azimuth ke gap centroid dari posisi site
   if (gapCenterLat && gapCenterLng && currentSiteLocation) {
     const brng = bearing(currentSiteLocation.lat, currentSiteLocation.lng, gapCenterLat, gapCenterLng);
     for (let i = 0; i < sectorCount; i++) {
@@ -340,12 +354,10 @@ function generateAzimuthInputs() {
 }
 function getAzimuths() { return Array.from({length:sectorCount},(_,i)=>{ const v=parseFloat(document.getElementById('gaz'+i)?.value); return isFinite(v)?v:0; }); }
 
-// ── VIZ SWITCH — sync kedua peta ──────────────────
 function setViz(type) {
   currentCoverageType = type;
   document.getElementById('btnRSRPGap')?.classList.toggle('active', type==='rsrp');
   document.getElementById('btnSINRGap')?.classList.toggle('active', type==='sinr');
-  // Re-render keduanya dengan metric yang sama
   renderBeforeMap();
   if (gapGridsAfter.length) renderAfterMap(gapGridsAfter);
 }
@@ -361,23 +373,34 @@ function runOptimization() {
       const radius   = parseInt(document.getElementById('radiusGap')?.value) || 300;
       const antennaH = parseInt(document.getElementById('antennaGap')?.value) || 30;
       azimuths = getAzimuths();
-      const newGrids = generateNewSiteGrids(P, gridSize, radius, antennaH);
-      gapGridsAfter  = overlayGrids(gapGridsBefore, newGrids, gridSize);
+
+      // Step 1: Hitung RSRP site baru per grid
+      const newSiteRSRP = computeNewSiteRSRP(P, gridSize, radius, antennaH);
+
+      // FIX #2: Step 2: Overlay dan hitung ulang SINR dengan benar
+      gapGridsAfter = overlayGridsWithSINR(gapGridsBefore, newSiteRSRP, P);
+
       renderAfterMap(gapGridsAfter);
       renderSectorFans();
-      renderDeltaPanel(gapGridsBefore, gapGridsAfter, gridSize);
+
+      // FIX #3: Delta panel pakai denominator konsisten (hanya grid overlap)
+      renderDeltaPanel(gapGridsBefore, gapGridsAfter);
       hideLoading();
     } catch(err) { console.error('[BSO]', err); hideLoading(); alert('Error: '+err.message); }
   }, 200);
 }
 
-function generateNewSiteGrids(P, gridSize, radius, antennaH) {
+// ─────────────────────────────────────────────────
+// FIX #1: Hitung RSRP site baru, return sebagai Map
+// key = "lat_lon" rounded ke gridSize
+// ─────────────────────────────────────────────────
+function computeNewSiteRSRP(P, gridSize, radius, antennaH) {
   const lat0=currentSiteLocation.lat, lng0=currentSiteLocation.lng;
   const mpdLat=111320, mpdLon=111320*Math.cos(lat0*Math.PI/180);
   const dLat=gridSize/mpdLat, dLon=gridSize/mpdLon;
   const minLat=lat0-radius/mpdLat, maxLat=lat0+radius/mpdLat;
   const minLon=lng0-radius/mpdLon, maxLon=lng0+radius/mpdLon;
-  const grids=[];
+  const rsrpMap = new Map();
   for(let lat=minLat; lat<=maxLat; lat+=dLat) {
     for(let lon=minLon; lon<=maxLon; lon+=dLon) {
       const dist=calcDist({lat:lat0,lng:lng0},{lat,lng:lon});
@@ -385,28 +408,85 @@ function generateNewSiteGrids(P, gridSize, radius, antennaH) {
       const brng=bearing(lat0,lng0,lat,lon);
       const gainDb=bestGain(brng,azimuths,P.BEAMWIDTH,P.ANTENNA_Am);
       const rsrp=computeRSRP(dist,gainDb,antennaH,P.SCENARIO,P.CONDITION,lat,lon,'SITE_BARU',P.CLUTTER,P);
-      const rsrpC=Math.max(RX_FLOOR,rsrp);
-      const bounds=[[lat,lon],[lat+dLat,lon],[lat+dLat,lon+dLon],[lat,lon+dLon]];
-      grids.push({ lat, lon, rsrpValue:rsrpC, sinrValue:rsrpC-10, bounds, isNew:true });
+      const rsrpC=Math.max(RX_FLOOR, rsrp);
+      const cellDeg = gridSize/mpdLat;
+      const key = Math.round(lat/cellDeg)+','+Math.round(lon/cellDeg);
+      rsrpMap.set(key, rsrpC);
     }
   }
-  return grids;
+  return rsrpMap;
 }
 
-function overlayGrids(beforeGrids, newGrids, gridSize) {
-  const mpdLat=111320, cellDeg=gridSize/mpdLat;
-  const bMap=new Map();
-  beforeGrids.forEach((g,i) => bMap.set(Math.round(g.lat/cellDeg)+','+Math.round((g.lon||g.lng)/cellDeg), i));
-  const merged=beforeGrids.map(g=>({...g}));
-  const newArea=[];
-  newGrids.forEach(ng => {
-    const key=Math.round(ng.lat/cellDeg)+','+Math.round(ng.lon/cellDeg);
-    const idx=bMap.get(key);
-    if(idx!==undefined) {
-      if(ng.rsrpValue>merged[idx].rsrpValue) merged[idx]={...merged[idx],rsrpValue:ng.rsrpValue,servingSiteId:'SITE_BARU'};
-    } else newArea.push({...ng});
+// ─────────────────────────────────────────────────
+// FIX #2: Overlay grid + hitung ulang SINR yang benar
+// Alur per grid:
+//   1. Cek apakah site baru punya sinyal di grid ini
+//   2. Tentukan serving cell = site dengan RSRP tertinggi
+//   3. Hitung SINR = serving / (semua interferer + noise)
+//   4. Hanya update grid yang sudah ada di before (denominator konsisten)
+// ─────────────────────────────────────────────────
+function overlayGridsWithSINR(beforeGrids, newSiteRSRP, P) {
+  const mpdLat = 111320;
+  const gridSize = parseInt(document.getElementById('gridGap')?.value) || 50;
+  const cellDeg = gridSize / mpdLat;
+
+  return beforeGrids.map(g => {
+    const gridCopy = { ...g };
+    const key = Math.round(g.lat/cellDeg)+','+Math.round((g.lon||g.lng)/cellDeg);
+    const newRSRP = newSiteRSRP.get(key); // undefined jika di luar radius site baru
+
+    // Kumpulkan semua sinyal yang masuk ke grid ini
+    // existing RSRP sudah ada di g.rsrpValue (dari snapshot coverage)
+    // Jika snapshot punya info per-site, gunakan itu; fallback ke single value
+    const allSignals = [];
+
+    // RSRP dari existing sites (dari snapshot)
+    if (g.allSiteRSRP && Array.isArray(g.allSiteRSRP)) {
+      // Ideal: snapshot sudah simpan RSRP per site
+      g.allSiteRSRP.forEach(r => allSignals.push(r));
+    } else {
+      // Fallback: pakai rsrpValue existing sebagai sinyal dominan
+      allSignals.push(g.rsrpValue);
+      // Estimasi interferer dari site lain berdasarkan sinrValue before
+      // SINR_before = serving / (I + N) → I = serving/10^(SINR/10) - N
+      if (g.sinrValue !== undefined) {
+        const serving_lin = dbm2lin(g.rsrpValue);
+        const sinr_lin = Math.pow(10, g.sinrValue/10);
+        const interference_lin = Math.max(0, serving_lin/sinr_lin - P.THERMAL_NOISE_LIN);
+        // Representasikan total interferensi sebagai satu nilai ekuivalen
+        if (interference_lin > 0) {
+          allSignals.push(lin2dbm(interference_lin / IM_FACTOR));
+        }
+      }
+    }
+
+    if (newRSRP !== undefined) {
+      // Site baru punya sinyal di grid ini
+      allSignals.push(newRSRP);
+
+      if (newRSRP > g.rsrpValue) {
+        // Site baru jadi serving cell
+        gridCopy.rsrpValue = newRSRP;
+        gridCopy.servingSiteId = 'SITE_BARU';
+      }
+      // Hitung ulang SINR dengan semua sinyal (existing + baru)
+      const servingRSRP = gridCopy.rsrpValue; // serving = yang tertinggi
+      gridCopy.sinrValue = computeSINR(servingRSRP, allSignals, P);
+    } else {
+      // Site baru tidak menjangkau grid ini
+      // Jika sinrValue sudah ada dari snapshot, pakai itu
+      // Jika tidak ada, estimasi dari rsrpValue
+      if (g.sinrValue === undefined) {
+        gridCopy.sinrValue = computeSINR(g.rsrpValue, allSignals, P);
+      }
+      // sinrValue before tetap sama = tidak berubah
+    }
+
+    return gridCopy;
   });
-  return [...merged, ...newArea];
+
+  // CATATAN: Grid baru di luar area before TIDAK ditambahkan
+  // Ini menjaga denominator before = denominator after (konsisten)
 }
 
 function renderAfterMap(grids) {
@@ -438,49 +518,32 @@ function renderSectorFans() {
   });
 }
 
-// ── VERDICT LOGIC yang benar ──────────────────────
-// Cek apakah ada improvement di kategori manapun (bukan hanya S1+S2)
-function calcVerdict(bStats, aStats) {
-  const totalB = bStats.total||1, totalA = aStats.total||1;
-  // Hitung weighted improvement: S1 naik = bagus, S4/S5 turun = bagus
-  const goodCats = ['S1','S2','S3'];
-  const badCats  = ['S4','S5','S6'];
-  let totalGoodImprovement = 0, totalBadReduction = 0, anyImprovement = false;
-  goodCats.forEach(c => {
-    const b = (bStats.cats[c]||0)/totalB*100;
-    const a = (aStats.cats[c]||0)/totalA*100;
-    const d = a - b;
-    if (d > 0.5) { totalGoodImprovement += d; anyImprovement = true; }
-  });
-  badCats.forEach(c => {
-    const b = (bStats.cats[c]||0)/totalB*100;
-    const a = (aStats.cats[c]||0)/totalA*100;
-    const d = b - a; // berkurang = bagus
-    if (d > 0.5) { totalBadReduction += d; anyImprovement = true; }
-  });
-  const s1Before = (bStats.cats.S1||0)/totalB*100;
-  const s1After  = (aStats.cats.S1||0)/totalA*100;
-  const s1Delta  = s1After - s1Before;
-  return { anyImprovement, totalGoodImprovement, totalBadReduction, s1Delta };
-}
-
-function renderDeltaPanel(before, after, gridSize) {
+// ─────────────────────────────────────────────────
+// FIX #3: Delta panel — denominator KONSISTEN
+// before.length === after.length karena after hanya
+// update grid existing, tidak tambah grid baru
+// ─────────────────────────────────────────────────
+function renderDeltaPanel(before, after) {
+  const gridSize = parseInt(document.getElementById('gridGap')?.value) || 50;
   const bStats=calcStats(before), aStats=calcStats(after);
   const gridKm2=(gridSize/1000)**2;
-  const totalB=bStats.total||1, totalA=aStats.total||1;
-  const verdict=calcVerdict(bStats,aStats);
+
+  // Denominator sama karena after.length === before.length
+  const total = before.length || 1;
+
+  const verdict=calcVerdict(bStats, aStats, total);
 
   const blankBefore=((bStats.cats.S5||0)+(bStats.cats.S6||0))*gridKm2;
   const blankAfter =((aStats.cats.S5||0)+(aStats.cats.S6||0))*gridKm2;
   const blankDelta = blankBefore - blankAfter;
-  const s1B = ((bStats.cats.S1||0)/totalB*100).toFixed(1);
-  const s1A = ((aStats.cats.S1||0)/totalA*100).toFixed(1);
+  const s1B = ((bStats.cats.S1||0)/total*100).toFixed(1);
+  const s1A = ((aStats.cats.S1||0)/total*100).toFixed(1);
   const s1D = verdict.s1Delta;
   const sign = d => d>=0 ? '+' : '';
 
   let verdictHtml;
   if (verdict.anyImprovement && s1D > 20) {
-    verdictHtml = `<div class="bso-verdict good">✅ <b>Optimalisasi Berhasil</b> — Excellent naik <b>${sign(s1D)}${s1D.toFixed(1)}%</b> di area simulasi</div>`;
+    verdictHtml = `<div class="bso-verdict good">✅ <b>Optimalisasi Berhasil</b> — Excellent naik <b>${sign(s1D)}${s1D.toFixed(1)}%</b></div>`;
   } else if (verdict.anyImprovement) {
     verdictHtml = `<div class="bso-verdict ok">⚠️ <b>Ada Peningkatan</b> — Coverage membaik di beberapa kategori. Coba geser lokasi atau naikkan tinggi antena untuk hasil lebih optimal.</div>`;
   } else {
@@ -506,8 +569,8 @@ function renderDeltaPanel(before, after, gridSize) {
         <thead><tr><th>Kategori</th><th>Before</th><th>After</th><th>Δ</th></tr></thead>
         <tbody>
           ${['S1','S2','S3','S4','S5'].map(cat => {
-            const b=((bStats.cats[cat]||0)/totalB*100).toFixed(1);
-            const a=((aStats.cats[cat]||0)/totalA*100).toFixed(1);
+            const b=((bStats.cats[cat]||0)/total*100).toFixed(1);
+            const a=((aStats.cats[cat]||0)/total*100).toFixed(1);
             const d=(parseFloat(a)-parseFloat(b)).toFixed(1);
             const cls=parseFloat(d)>0.5?'pos':parseFloat(d)<-0.5?'neg':'neu';
             const labels={S1:'Excellent',S2:'Good',S3:'Moderate',S4:'Poor',S5:'Bad/Blank'};
@@ -516,10 +579,26 @@ function renderDeltaPanel(before, after, gridSize) {
         </tbody>
       </table>
     </div>
-    <p style="font-size:10.5px;color:#888;margin:8px 0 0;">📊 Denominator: <b>${totalA} grid total area simulasi</b></p>`;
+    <p style="font-size:10.5px;color:#888;margin:8px 0 0;">📊 Denominator: <b>${total} grid (konsisten before & after)</b></p>`;
   el.style.display='block';
-  const afterEl=document.getElementById('bsoAfterStats');
-  if (afterEl) afterEl.innerHTML=renderMiniStatHTML(aStats,'After','#34c759');
+}
+
+function calcVerdict(bStats, aStats, total) {
+  const goodCats = ['S1','S2','S3'];
+  const badCats  = ['S4','S5','S6'];
+  let totalGoodImprovement = 0, totalBadReduction = 0, anyImprovement = false;
+  goodCats.forEach(c => {
+    const b = (bStats.cats[c]||0)/total*100;
+    const a = (aStats.cats[c]||0)/total*100;
+    if (a - b > 0.5) { totalGoodImprovement += (a-b); anyImprovement = true; }
+  });
+  badCats.forEach(c => {
+    const b = (bStats.cats[c]||0)/total*100;
+    const a = (aStats.cats[c]||0)/total*100;
+    if (b - a > 0.5) { totalBadReduction += (b-a); anyImprovement = true; }
+  });
+  const s1Delta = ((aStats.cats.S1||0)/total*100) - ((bStats.cats.S1||0)/total*100);
+  return { anyImprovement, totalGoodImprovement, totalBadReduction, s1Delta };
 }
 
 function calcStats(grids) {
@@ -544,7 +623,6 @@ function renderMiniStatHTML(stats, label, color) {
   return `<div class="bso-mini-stat" style="border-left-color:${color}"><span class="bso-ms-label">${label}</span><span class="bso-ms-val">${s12.toFixed(1)}%</span><span class="bso-ms-sub">S1+S2 (${stats.total} grid)</span></div>`;
 }
 
-// ── Legend ─────────────────────────────────────────
 function updateLegend(which, grids) {
   const elId=which==='before'?'bsoLegendBefore':'bsoLegendAfter';
   const el=document.getElementById(elId);
@@ -563,7 +641,6 @@ function updateLegend(which, grids) {
   }).join('');
 }
 
-// ── Loading ────────────────────────────────────────
 function showLoading(text) {
   hideLoading();
   const el=document.createElement('div');
@@ -573,4 +650,4 @@ function showLoading(text) {
 }
 function hideLoading() { document.getElementById('bsoLoading')?.remove(); }
 
-console.log('blankspot.js v2.0 — Panel kanan | Before=all grids | Viz sync | Smart verdict');
+console.log('blankspot.js v2.1 — SINR fix | Denominator konsisten | Interferensi proper');
