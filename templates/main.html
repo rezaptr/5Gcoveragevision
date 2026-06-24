@@ -123,7 +123,7 @@
             <span class="card-tag tag-sim">Simulasi</span>
           </div>
           <h3>Drive Test (Rute Simulasi)</h3>
-          <p>Estimasi nilai RSRP dan SINR berdasarkan model propagasi menggunakan sampling point di sepanjang rute simulasi drive test yang telah dibuat.</p>
+          <p>Estimasi nilai SS-RSRP dan SS-SINR berdasarkan model propagasi menggunakan sampling point di sepanjang rute simulasi drive test yang telah dibuat.</p>
           <a href="{{ url_for('simulationroute') }}" class="btn-action">MULAI</a>
         </div>
       </div>
@@ -210,10 +210,10 @@
               <div class="card-icon">07</div>
               <span class="card-tag tag-analisis">Analisis</span>
             </div>
-            <h3>Analisis Keseluruhan Simulasi</h3>
+            <h3>Analisis Akurasi Model Propagasi</h3>
           </div>
           <div class="card-wide-body">
-            <p>Evaluasi menyeluruh terhadap hasil simulasi coverage jaringan 5G pada area yang ditentukan. Mencakup penilaian kualitas sinyal berdasarkan parameter RSRP dan SINR, yang kemudian diklasifikasikan ke dalam kategori kualitas jaringan sesuai standar yang berlaku.</p>
+            <p>Evaluasi akurasi model propagasi terhadap hasil data aktual drive test. Mencakup penilaian kualitas sinyal berdasarkan parameter SS-RSRP dan SS-SINR</p>
           </div>
           <div class="card-wide-action">
             <a href="{{ url_for('evaluation') }}" class="btn-action">MULAI ANALISIS</a>

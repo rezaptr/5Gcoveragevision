@@ -24,11 +24,11 @@
   <div class="toolbar-divider"></div>
  
   <button id="analyzeRsrpBtn" class="btn btn-process-rsrp" disabled>
-    <i class="fas fa-signal"></i> Analisis RSRP
+    <i class="fas fa-signal"></i> Analisis SS-RSRP
   </button>
  
   <button id="analyzeSinrBtn" class="btn btn-process-sinr" disabled>
-    <i class="fas fa-chart-line"></i> Analisis SINR
+    <i class="fas fa-chart-line"></i> Analisis SS-SINR
   </button>
  
   <div class="toolbar-status">
@@ -57,7 +57,7 @@
         </div>
       </div>
       <div id="dtLegendBox" class="map-legend" style="display:none;">
-        <h4 id="dtLegendTitle">RSRP Aktual (dBm)</h4>
+        <h4 id="dtLegendTitle">SS-RSRP Aktual (dBm)</h4>
         <table>
           <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
           <tbody id="dtLegendBody"></tbody>
@@ -81,7 +81,7 @@
         </div>
       </div>
       <div id="simLegendBox" class="map-legend" style="display:none;">
-        <h4 id="simLegendTitle">Error RSRP (Sim−DT)</h4>
+        <h4 id="simLegendTitle">Error SS-RSRP (Sim−DT)</h4>
         <table>
           <thead><tr><th></th><th>Keterangan</th></tr></thead>
           <tbody id="simLegendBody"></tbody>
@@ -107,7 +107,7 @@
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;">
         <div>
           <div style="font-size:12px;font-weight:700;color:#1F3C88;margin-bottom:8px;">
-            <span class="mgh-badge">RSRP</span>
+            <span class="mgh-badge">SS-RSRP</span>
           </div>
           <div class="line-chart-wrap">
             <canvas id="lineChartRsrp"></canvas>
@@ -115,7 +115,7 @@
         </div>
         <div>
           <div style="font-size:12px;font-weight:700;color:#1F3C88;margin-bottom:8px;">
-            <span class="mgh-badge">SINR</span>
+            <span class="mgh-badge">SS-SINR</span>
           </div>
           <div class="line-chart-wrap">
             <canvas id="lineChartSinr"></canvas>
@@ -140,8 +140,8 @@
             <tr>
               <th rowspan="2" style="text-align:left;">Rentang Jarak</th>
               <th rowspan="2">N</th>
-              <th colspan="3" style="border-bottom:1px solid rgba(255,255,255,0.3);">RSRP (dBm)</th>
-              <th colspan="3" style="border-bottom:1px solid rgba(255,255,255,0.3);">SINR (dB)</th>
+              <th colspan="3" style="border-bottom:1px solid rgba(255,255,255,0.3);">SS-RSRP (dBm)</th>
+              <th colspan="3" style="border-bottom:1px solid rgba(255,255,255,0.3);">SS-SINR (dB)</th>
               <th rowspan="2">Kecenderungan</th>
             </tr>
             <tr>

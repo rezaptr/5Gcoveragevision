@@ -482,7 +482,7 @@ function generateCoverage() {
             .bindPopup(`
               <b>${currentCoverageType.toUpperCase()}: ${value} ${currentCoverageType === 'rsrp' ? 'dBm' : 'dB'}</b><br>
               Kategori: ${getCategoryName(category)}<br>
-              RSRP: ${rsrpC.toFixed(1)} dBm | SINR: ${sinr.toFixed(1)} dB<br>
+              SS-RSRP: ${rsrpC.toFixed(1)} dBm | SS-SINR: ${sinr.toFixed(1)} dB<br>
               Jarak: ${dist.toFixed(0)} m
             `)
             .addTo(coverageLayer);
@@ -521,19 +521,19 @@ function updateLegend(grids) {
   if (!legend || !tbody) return;
   legend.style.display = 'block';
   const isRSRP = currentCoverageType === 'rsrp';
-  if (title) title.textContent = isRSRP ? 'RSRP (dBm)' : 'SINR (dB)';
+  if (title) title.textContent = isRSRP ? 'SS-RSRP (dBm)' : 'SS-SINR (dB)';
   const rows = isRSRP ? [
     { cat: 'S1', color: '#0042a5', range: '-85 ~ 0' },
     { cat: 'S2', color: '#00a955', range: '-95 ~ -85' },
     { cat: 'S3', color: '#70ff66', range: '-105 ~ -95' },
     { cat: 'S4', color: '#fffb00', range: '-120 ~ -105' },
-    { cat: 'S5', color: '#ff3333', range: '< -120' },
+    { cat: 'S5', color: '#ff3333', range: '-140 ~ -120' },
   ] : [
     { cat: 'S1', color: '#0042a5', range: '≥ 20 dB' },
     { cat: 'S2', color: '#00a955', range: '10 ~ 20' },
     { cat: 'S3', color: '#70ff66', range: '0 ~ 10' },
     { cat: 'S4', color: '#fffb00', range: '-5 ~ 0' },
-    { cat: 'S5', color: '#ff3333', range: '< -5' },
+    { cat: 'S5', color: '#ff3333', range: '-40 ~ -5' },
   ];
   const total = grids.length || 1;
   tbody.innerHTML = rows.map(r => {
@@ -556,7 +556,7 @@ function updateStats(grids, gridSize) {
   const poorPct = (((cats.S4 || 0) + (cats.S5 || 0) + (cats.S6 || 0)) / total * 100).toFixed(1);
   const totalKm = (grids.length * gridKm2).toFixed(3);
   const nbInfo  = neighbourSites.length > 0
-    ? `<p style="color:#666;font-size:11.5px;margin:4px 0 0;">📡 SINR dihitung dengan ${neighbourSites.length} neighbour sebagai interferer: <b>${neighbourSites.map(n => n.id).join(', ')}</b></p>`
+    ? `<p style="color:#666;font-size:11.5px;margin:4px 0 0;">📡 SS-SINR dihitung dengan ${neighbourSites.length} neighbour sebagai interferer: <b>${neighbourSites.map(n => n.id).join(', ')}</b></p>`
     : `<p style="color:#999;font-size:11.5px;margin:4px 0 0;">⚠️ Tidak ada neighbour terdeteksi — SINR dihitung noise-limited</p>`;
 
   document.getElementById('pureResult').innerHTML = `

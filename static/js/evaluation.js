@@ -328,7 +328,7 @@ function renderSiteMarkers() {
 
 function updateDtLegend(mode) {
   const tbody = byId('dtLegendBody'); if (!tbody) return;
-  byId('dtLegendTitle').textContent = mode === 'sinr' ? 'SINR Aktual (dB)' : 'RSRP Aktual (dBm)';
+  byId('dtLegendTitle').textContent = mode === 'sinr' ? 'SS-SINR Aktual (dB)' : 'SS-RSRP Aktual (dBm)';
 
   const buckets = mode === 'sinr' ? [
     { label:'≥ 20 dB',      color:'#0042a5', fn: v => v >= 20  },

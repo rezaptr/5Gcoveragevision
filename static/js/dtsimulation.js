@@ -59,7 +59,7 @@
   const MAX_NEIGHBOURS = 6;
   const FIXED_SEED     = 20250101;
 
-  const DOMINANT_INTERFERER_THRESHOLD_DB = 20;
+  const DOMINANT_INTERFERER_THRESHOLD_DB = 30;
 
   const MAIN_SECTOR_COLORS = ['#e6194b','#3cb44b','#4363d8','#f58231','#911eb4','#42d4f4'];
   const NEIGHBOUR_PALETTE  = [
@@ -599,8 +599,7 @@
       {label:'-95~-85 dBm',   color:'#00a955', fn:v=>v>=-95 &&v<-85 },
       {label:'-105~-95 dBm',  color:'#70ff66', fn:v=>v>=-105&&v<-95 },
       {label:'-120~-105 dBm', color:'#fffb00', fn:v=>v>=-120&&v<-105},
-      {label:'-125~-120 dBm', color:'#ff3333', fn:v=>v>=-125&&v<-120},
-      {label:'< -125 dBm',    color:'#800000', fn:v=>v<-125         },
+      {label:'-140~-120 dBm', color:'#ff3333', fn:v=>v>=-125&&v<-120},
     ];
     const total = simResults.length || 1;
     tbody.innerHTML = B.map(b => {
@@ -614,11 +613,11 @@
     const legend = byId('sinrLegend'), tbody = byId('sinrLegendBody');
     if (!legend || !tbody) return;
     const B = [
-      {label:'≥ 20 dB',    color:'#0042a5', fn:v=>v>=20       },
+      {label:'20 ~ 40 dB',    color:'#0042a5', fn:v=>v>=20       },
       {label:'10 ~ 20 dB', color:'#00a955', fn:v=>v>=10&&v<20 },
       {label:'0 ~ 10 dB',  color:'#70ff66', fn:v=>v>=0 &&v<10 },
       {label:'-5 ~ 0 dB',  color:'#fffb00', fn:v=>v>=-5&&v<0  },
-      {label:'< -5 dB',    color:'#ff3333', fn:v=>v<-5        },
+      {label:'-40 ~ -5 dB',    color:'#ff3333', fn:v=>v<-5        },
     ];
     const total = simResults.length || 1;
     tbody.innerHTML = B.map(b => {

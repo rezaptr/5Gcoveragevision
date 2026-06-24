@@ -1247,7 +1247,7 @@
       const p10 = ((rsrpResults.filter(r => r.sinr >= 10 && r.sinr < 20).length / total) * 100).toFixed(1);
       const p0  = ((rsrpResults.filter(r => r.sinr >= 0  && r.sinr < 10).length / total) * 100).toFixed(1);
       alert(
-        `Kalkulasi SINR selesai [3GPP TR 36.942 §A.1]\n` +
+        `Kalkulasi SINR selesai` +
         `Formula serving  : SINR = S / (I + N + I_IM)\n` +
         `Formula neighbour: SINR_nb = S_nb / (I_partial + N_eff)\n` +
         `Thermal noise N: ${getThermalNoise().toFixed(1)} dBm\n` +
@@ -1427,7 +1427,7 @@
     const tbody  = document.getElementById('legendTableBody');
     const title  = document.getElementById('legendTitle');
     if (!legend || !tbody) return;
-    if (title) title.textContent = type === 'RSRP' ? 'RSRP (dBm)' : 'SINR (dB)';
+    if (title) title.textContent = type === 'RSRP' ? 'SS-RSRP (dBm)' : 'SS-SINR (dB)';
     const buckets = type === 'RSRP' ? [
       { label:'≥ -85',       color:'#0042a5', fn: v => v >= -85  },
       { label:'-95 ~ -85',   color:'#00a955', fn: v => v >= -95  && v < -85  },
@@ -1462,11 +1462,11 @@
     const box = document.getElementById('resultBox'); if (!box) return;
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     if (type === 'RSRP') {
-      set('resultTitle',   'Kalkulasi RSRP Selesai');
+      set('resultTitle',   'Kalkulasi SS-RSRP Selesai');
       set('resultStats',   `${rsrpResults.length} titik | Seed: ${FIXED_SEED} | 3GPP TR 38.901`);
       set('resultMessage', 'Klik titik di peta → detail sel & garis ke site');
     } else if (type === 'SINR') {
-      set('resultTitle',   'Kalkulasi SINR Selesai');
+      set('resultTitle',   'Kalkulasi SS-SINR Selesai');
       set('resultStats',   `${rsrpResults.length} titik | SINR = S/(I+N+I_IM) [TR 36.942]`);
       set('resultMessage', `Thermal: ${getThermalNoise().toFixed(1)} dBm | IM: ${INTERFERENCE_MARGIN_DB} dB`);
     } else {
@@ -1541,7 +1541,7 @@
     console.log(`Avg RSRP: ${avgRSRP} dBm`);
     if (hasSINR) {
       const avgSINR = (rsrpResults.reduce((s,r) => s + r.sinr, 0) / total).toFixed(2);
-      console.log(`Avg SINR: ${avgSINR} dB`);
+      console.log(`Avg SS-SINR: ${avgSINR} dB`);
     }
     // Distribusi RSRP
     const rsrpBuckets = [

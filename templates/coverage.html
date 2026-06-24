@@ -1,5 +1,5 @@
 {% extends "base_app.html" %}
-{% block title %}Visualisasi Coverage 5G - RSRP dan SINR{% endblock %}
+{% block title %}Visualisasi Coverage 5G - SS-RSRP dan SS-SINR{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -11,7 +11,7 @@
 
 {% block content %}
 <header class="main-header">
-  <h1>VISUALISASI COVERAGE JARINGAN 5G — RSRP DAN SINR</h1>
+  <h1>VISUALISASI COVERAGE JARINGAN 5G — SS-RSRP DAN SS-SINR</h1>
 </header>
 
 <section class="coverage-toolbar">
@@ -39,7 +39,7 @@
     <button id="toggleGapBtn" class="toggle-gap-btn">🙈 Sembunyikan Gap</button>
     <div id="neighbourBadge" class="neighbour-badge" style="display:none;"></div>
     <div id="mapLegend" class="map-legend" style="display:none;">
-      <h4 id="legendTitle">RSRP (dBm)</h4>
+      <h4 id="legendTitle">SS-RSRP (dBm)</h4>
       <table>
         <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
         <tbody id="legendTableBody"></tbody>
@@ -56,10 +56,10 @@
       <div class="panel-card-title"><i class="fas fa-eye"></i> Tampilan</div>
       <div class="viz-button-group">
         <button id="visualizeRSRP" class="viz-btn active">
-          <i class="fas fa-signal"></i> RSRP
+          <i class="fas fa-signal"></i> SS-RSRP
         </button>
         <button id="visualizeSINR" class="viz-btn">
-          <i class="fas fa-broadcast-tower"></i> SINR
+          <i class="fas fa-broadcast-tower"></i> SS-SINR
         </button>
       </div>
     </div>

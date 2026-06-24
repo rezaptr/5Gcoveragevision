@@ -259,7 +259,7 @@ function showGapInfo() {
         <span class="bso-severity-badge">${gapData.severityLabel||'Kritis'}</span>
       </div>
       <div class="bso-gap-meta">
-        <div><span class="bso-meta-label">Avg RSRP</span><span class="bso-meta-val" style="color:${tc}">${gapData.avgRSRP_dBm!=null?gapData.avgRSRP_dBm+' dBm':'No signal'}</span></div>
+        <div><span class="bso-meta-label">Avg SS-RSRP</span><span class="bso-meta-val" style="color:${tc}">${gapData.avgRSRP_dBm!=null?gapData.avgRSRP_dBm+' dBm':'No signal'}</span></div>
         <div><span class="bso-meta-label">Luas</span><span class="bso-meta-val">${gapData.areaSqKm||'?'} km²</span></div>
         <div><span class="bso-meta-label">Radius</span><span class="bso-meta-val">~${gapData.estimatedRadius_m||'?'} m</span></div>
         <div><span class="bso-meta-label">Site Terdekat</span><span class="bso-meta-val" style="color:#1F3C88;font-weight:700">${gapData.nearestSiteId||'?'}</span></div>
@@ -302,7 +302,7 @@ function renderBeforeMap() {
     const v   = Math.round(val*10)/10;
     const color = getColor(metric, v);
     L.polygon(g.bounds, { color, fillColor:color, fillOpacity:0.72, weight:0 })
-      .bindPopup(`<b>${metric.toUpperCase()}: ${v} ${metric==='rsrp'?'dBm':'dB'}</b><br>RSRP: ${g.rsrpValue.toFixed(1)} dBm`)
+      .bindPopup(`<b>${metric.toUpperCase()}: ${v} ${metric==='rsrp'?'dBm':'dB'}</b><br>SS-RSRP: ${g.rsrpValue.toFixed(1)} dBm`)
       .addTo(beforeLayerGroup);
   });
   updateLegend('before', gapGridsBefore);
@@ -660,7 +660,7 @@ function updateLegend(which, grids) {
   const tbody = document.getElementById(elId + 'Body');
   if (!el || !tbody) return;
   el.style.display = 'block';
-  el.querySelector('.bso-legend-title').textContent = currentCoverageType === 'rsrp' ? 'RSRP (dBm)' : 'SINR (dB)';
+  el.querySelector('.bso-legend-title').textContent = currentCoverageType === 'rsrp' ? 'SS-RSRP (dBm)' : 'SS-SINR (dB)';
   const metric = currentCoverageType;
   const rows = metric === 'rsrp'
     ? [
