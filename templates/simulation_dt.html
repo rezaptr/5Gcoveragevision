@@ -21,8 +21,8 @@
 
   <div class="toolbar-divider"></div>
 
-  <button id="btnSimRSRP"      class="btn-toolbar btn-teal" disabled>Simulasi RSRP</button>
-  <button id="btnSimSINR"      class="btn-toolbar btn-teal" disabled>Simulasi SINR</button>
+  <button id="btnSimRSRP"      class="btn-toolbar btn-teal" disabled>Simulasi SS-RSRP</button>
+  <button id="btnSimSINR"      class="btn-toolbar btn-teal" disabled>Simulasi SS-SINR</button>
   <button id="btnSimPCI"       class="btn-toolbar btn-teal" disabled>Simulasi PCI</button>
   <button id="btnExportDtClean" class="btn-toolbar btn-green" disabled>Simpan DT Clean</button>
 
@@ -40,7 +40,7 @@
     <div class="simulation-map-wrapper">
 
       <div id="dtLegend" class="rsrp-legend" style="display:none;">
-        <h4 id="dtLegendTitle">RSRP Simulasi (dBm)</h4>
+        <h4 id="dtLegendTitle">SS-RSRP Simulasi (dBm)</h4>
         <table>
           <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
           <tbody id="dtLegendBody"></tbody>
@@ -48,7 +48,7 @@
       </div>
 
       <div id="sinrLegend" class="rsrp-legend" style="display:none;">
-        <h4>SINR Simulasi (dB)</h4>
+        <h4>SS-SINR Simulasi (dB)</h4>
         <table>
           <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
           <tbody id="sinrLegendBody"></tbody>
@@ -67,7 +67,7 @@
       <div class="cell-panel-header">
         <span id="dtCellPanelTitle">
           📡 NR Serving and Neighbor Cells
-          <span class="cell-panel-hint">— Klik titik simulasi di peta untuk detail</span>
+          <span class="cell-panel-hint">- Klik titik simulasi di peta untuk detail</span>
         </span>
         <div class="cell-legend-pills" id="dtCellLegendPills">
           <span class="line-pill" style="background:#00c050">Serving</span>
@@ -76,7 +76,7 @@
       </div>
       <div class="cell-table-wrapper" id="dtCellTableWrapper">
         <div class="cell-empty-state">
-          Belum ada titik dipilih — klik titik berwarna di peta untuk melihat detail sel
+          Belum ada titik dipilih, klik titik berwarna di peta untuk melihat detail sel
         </div>
       </div>
     </div>
@@ -132,9 +132,9 @@
           <td>Skenario</td>
           <td>
             <select id="overrideScenario" class="field-control-sm" disabled>
-              <option value="uma">UMa — Macro</option>
-              <option value="umi">UMi — Micro</option>
-              <option value="rma">RMa — Rural</option>
+              <option value="uma">Urban Macro (UMa)</option>
+              <option value="umi">Urban Micro (UMi)</option>
+              <option value="rma">Rural Macro (RMa)</option>
             </select>
           </td>
         </tr>
@@ -144,13 +144,12 @@
             <select id="overrideCondition" class="field-control-sm" disabled>
               <option value="nlos">NLOS</option>
               <option value="los">LOS</option>
-              <option value="mixed">Mixed</option>
             </select>
           </td>
         </tr>
       </table>
       <div id="overrideBadge" class="override-badge" style="display:none;">
-        ⚠️ Override aktif — berbeda dari site index
+        ⚠️ Override aktif — berbeda dari data site aktual
       </div>
     </div>
 
@@ -161,7 +160,6 @@
         <tr><td>Tx Power:</td>        <td><b>46 dBm</b></td></tr>
         <tr><td>Mobile Height:</td>   <td><b>1.5 m</b></td></tr>
         <tr><td>Path Loss:</td>       <td><b>3GPP TR 38.901</b></td></tr>
-        <tr><td>Bias:</td>            <td><b>Empiris dari CSV aktual</b></td></tr>
         <tr><td>Seed:</td>            <td><b id="infoSeedValue">Hash dari data</b></td></tr>
       </table>
     </div>

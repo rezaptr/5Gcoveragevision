@@ -718,6 +718,8 @@
 
     // Default tampilkan RSRP setelah simulasi
     dtDisplayMode = 'rsrp';
+    byId('sinrLegend').style.display = 'none';
+    byId('pciLegend').style.display  = 'none';
     updateRSRPLegend();
     renderStats();
 
@@ -733,32 +735,32 @@
     const avgDom  = simResults.length
       ? (simResults.reduce((s,r)=>s+r.n_dominant,0)/simResults.length).toFixed(1) : 0;
 
-    let msg = `✅ Simulasi RSRP selesai — ${simResults.length} titik\n`;
+    let msg = `✅ Simulasi SS-RSRP selesai — ${simResults.length} titik\n`;
     msg    += `UE-centric | ${globalSectorList.length} sektor RF pool\n`;
     msg    += `Primary serving: ${pctMain}% | Neighbour: ${(100-parseFloat(pctMain)).toFixed(1)}%\n`;
     msg    += `Rata-rata dominant interferer: ${avgDom}\n\n`;
     if (pairedR.length) {
       const dR = pairedR.map(r => parseFloat(r.rsrp_sim) - r.rsrp_actual);
-      msg += `RSRP: ME=${mean(dR).toFixed(2)} | MAE=${maeF(dR).toFixed(2)} | RMSE=${rmseF(dR).toFixed(2)} dB\n`;
+      msg += `SS-RSRP: ME=${mean(dR).toFixed(2)} | MAE=${maeF(dR).toFixed(2)} | RMSE=${rmseF(dR).toFixed(2)} dB\n`;
     }
     if (pairedS.length) {
       const dS = pairedS.map(r => parseFloat(r.sinr_sim) - r.sinr_actual);
-      msg += `SINR: ME=${mean(dS).toFixed(2)} | MAE=${maeF(dS).toFixed(2)} | RMSE=${rmseF(dS).toFixed(2)} dB\n`;
+      msg += `SS-SINR: ME=${mean(dS).toFixed(2)} | MAE=${maeF(dS).toFixed(2)} | RMSE=${rmseF(dS).toFixed(2)} dB\n`;
     }
-    msg += `\nKlik "Simulasi SINR" atau "Simulasi PCI" di toolbar untuk tampilan lainnya.`;
+    msg += `\nKlik "Simulasi SS-SINR" atau "Simulasi PCI" di toolbar untuk tampilan lainnya.`;
     alert(msg);
   }
 
   // [v20.0] Run SINR Only — switch tampilan ke SINR (kalkulasi sudah selesai di runSimulation)
   function runSINROnly() {
-    if (!simResults.length) return alert('Jalankan Simulasi RSRP terlebih dahulu!');
+    if (!simResults.length) return alert('Jalankan Simulasi SS-RSRP terlebih dahulu!');
     dtDisplayMode = 'sinr';
     redrawSINRMode();
   }
 
   // [v20.0] Simulasi PCI — switch tampilan ke PCI mode
   function simulatePCI() {
-    if (!simResults.length) return alert('Jalankan Simulasi RSRP terlebih dahulu!');
+    if (!simResults.length) return alert('Jalankan Simulasi SS-RSRP terlebih dahulu!');
     dtDisplayMode = 'pci';
     redrawPCIMode();
   }
@@ -779,7 +781,7 @@
       }).addTo(cellLineLayer)
         .bindTooltip(
           `<b>${i===0?'Serving':'Detected'}: ${c.siteId}</b><br>` +
-          `PCI: ${c.pci??'N/A'} | RSRP: ${c.rsrp.toFixed(1)} dBm | SINR: ${c.sinr_est!=null?c.sinr_est.toFixed(1):'—'} dB`,
+          `PCI: ${c.pci??'N/A'} | SS-RSRP: ${c.rsrp.toFixed(1)} dBm | SS-SINR: ${c.sinr_est!=null?c.sinr_est.toFixed(1):'—'} dB`,
           {sticky:true}
         );
     });
@@ -798,8 +800,8 @@
         `<span style="font-weight:400;font-size:10px;opacity:0.75;margin-left:6px;">` +
         `(${result.lat.toFixed(5)}, ${result.lng.toFixed(5)})</span><br>` +
         `<span style="font-size:10px;opacity:0.85;">` +
-        `RSRP sim:<b>${result.rsrp_sim} dBm</b>${rsrpAkt}` +
-        `&nbsp;&nbsp;SINR sim:<b>${result.sinr_sim} dB</b>${sinrAkt}` +
+        `SS-RSRP sim:<b>${result.rsrp_sim} dBm</b>${rsrpAkt}` +
+        `&nbsp;&nbsp;SS-SINR sim:<b>${result.sinr_sim} dB</b>${sinrAkt}` +
         `&nbsp;&nbsp;<span style="opacity:0.6;font-size:9px;">(${result.n_dominant} dominant interferer)</span>` +
         `</span>`;
     }
@@ -910,25 +912,21 @@
     };
 
     box.innerHTML = `
-      <h3>📊 Simulasi v20.0 — UE-Centric</h3>
+      <h3>📊 Simulasi Berbasis Data Aktual</h3>
       <p class="result-meta">
         ${simResults.length} titik &nbsp;|&nbsp;
         ${globalSectorList.length} sektor RF pool &nbsp;|&nbsp;
         Seed:${FIXED_SEED}
       </p>
-      <p style="font-size:10px;opacity:0.55;margin:2px 0 6px;">
-        Tanpa kalibrasi | Dominant interferer ±${DOMINANT_INTERFERER_THRESHOLD_DB}dB [TR 36.942 §A.1]<br>
-        σ=${sigma}dB | Shared field | ±2σ clamp [ITU-R M.2135]
-      </p>
       <div style="background:rgba(0,201,136,0.1);border:1px solid rgba(0,201,136,0.3);
-        border-radius:6px;padding:5px 9px;font-size:10px;margin-bottom:6px;">
+        border-radius:6px;padding:5px 9px;font-size:10px;margin-bottom:6px;color:#ffffff;">
         Primary: <b>${pctMain}%</b> &nbsp;|&nbsp;
         Neighbour: <b>${(100-parseFloat(pctMain)).toFixed(1)}%</b> &nbsp;|&nbsp;
         Avg interferer: <b>${avgDom}</b>
       </div>
-      <div class="stat-section-title">📶 RSRP</div>
+      <div class="stat-section-title">Hasil SS-RSRP</div>
       ${metricBlock(pairedR,'rsrp_sim','rsrp_actual','dBm')}
-      <div class="stat-section-title" style="margin-top:8px;">📡 SINR</div>
+      <div class="stat-section-title" style="margin-top:8px;">Hasil SS-SINR</div>
       ${metricBlock(pairedS,'sinr_sim','sinr_actual','dB')}
       <div class="result-footer" style="margin-top:8px;">Klik marker untuk detail per titik</div>`;
     box.style.display = 'block';
@@ -1057,7 +1055,7 @@
         radius:3, fillColor:p.rsrp!==null?'#00cc88':'#aaaaaa',
         color:'none', fillOpacity:0.6,
       }).addTo(dtPointLayer)
-        .bindPopup(`RSRP:${p.rsrp??'—'}${p.sinr!=null?` | SINR:${p.sinr}`:''}`);
+        .bindPopup(`SS-RSRP:${p.rsrp??'—'}${p.sinr!=null?` | SS-SINR:${p.sinr}`:''}`);
     });
 
     const guide=byId('mapGuide');
