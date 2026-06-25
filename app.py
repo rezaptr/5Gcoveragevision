@@ -220,9 +220,14 @@ def change_password():
     if 'user_id' not in session:
         return redirect(url_for('login'))
 
-    old_password     = request.form['old_password']
-    new_password     = request.form['new_password']
-    confirm_password = request.form['confirm_password']
+    old_password     = request.form.get('old_password', '')
+    new_password     = request.form.get('new_password', '')
+    confirm_password = request.form.get('confirm_password', '')
+
+    # Validasi input kosong
+    if not old_password or not new_password or not confirm_password:
+        flash("Semua field wajib diisi!", "danger")
+        return redirect(url_for('profile'))
 
     conn = get_db_connection()
     try:
@@ -230,14 +235,16 @@ def change_password():
         cur.execute("SELECT password FROM users WHERE id = %s", (session['user_id'],))
         user = cur.fetchone()
 
-        if not user or not check_password_hash(user[0], old_password):
+        if not user:
+            flash("User tidak ditemukan!", "danger")
+            return redirect(url_for('profile'))
+
+        if not check_password_hash(user[0], old_password):
             flash("Password lama salah!", "danger")
-            cur.close()
             return redirect(url_for('profile'))
 
         if new_password != confirm_password:
             flash("Konfirmasi password tidak cocok!", "danger")
-            cur.close()
             return redirect(url_for('profile'))
 
         hashed_password = generate_password_hash(new_password)
@@ -246,11 +253,10 @@ def change_password():
             (hashed_password, session['user_id'])
         )
         conn.commit()
-        cur.close()
-
         flash("Password berhasil diubah!", "success")
 
     finally:
+        cur.close()
         release_db_connection(conn)
 
     return redirect(url_for('profile'))
