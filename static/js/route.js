@@ -425,65 +425,28 @@ function setActiveRoute(type) {
 function generateSampling() {
   if (!mainRouteLayer || !selectedSite) return alert("⚠️ Generate rute utama dulu");
   samplingLayer.clearLayers();
-
-  const INTERVAL_M = 10;
-  const pts = mainRouteLayer.getLatLngs();
-
-  // ── 1. Resample rute jadi titik per 10 meter ──
-  const sampledPts = [];
-  let accumulated = 0;
-  sampledPts.push({ lat: pts[0].lat, lng: pts[0].lng });
-
-  for (let i = 1; i < pts.length; i++) {
-    const dist = haversineM(pts[i-1], pts[i]);
-    accumulated += dist;
-    if (accumulated >= INTERVAL_M) {
-      sampledPts.push({ lat: pts[i].lat, lng: pts[i].lng });
-      accumulated = 0;
-    }
-  }
-
-  // ── 2. Deduplikasi titik yang terlalu dekat (<5m) ──
-  const dedupedPts = [];
-  for (const pt of sampledPts) {
-    const tooClose = dedupedPts.some(p => haversineM(p, pt) < 5);
-    if (!tooClose) dedupedPts.push(pt);
-  }
-
-  // ── 3. Render semua titik ──
-  dedupedPts.forEach(pt => {
-    L.circleMarker([pt.lat, pt.lng], {
-      radius: 4, fillColor: '#00e676', color: '#000',
-      weight: 1, fillOpacity: 0.9
-    }).addTo(samplingLayer);
-  });
-
-  // ── 4. Tandai titik terbaik per sektor (opsional) ──
-  const s = siteIndex[selectedSite];
-  const sp = {};
+  const s = siteIndex[selectedSite], pts = mainRouteLayer.getLatLngs(), sp = {};
   s.sectors.forEach((az, idx) => {
     let best = null, minDiff = Infinity;
-    dedupedPts.forEach(p => {
-      const dir = bearingBetween({ lat: s.lat, lng: s.lng }, p);
+    pts.forEach((p, i) => {
+      if (i === 0) return;
+      const dir = bearingBetween({ lat: s.lat, lng: s.lng }, { lat: p.lat, lng: p.lng });
       let diff = Math.abs(dir - az);
       if (diff > 180) diff = 360 - diff;
       if (diff < 30 && diff < minDiff) { minDiff = diff; best = p; }
     });
     if (best) {
       sp[idx] = best;
-      L.circleMarker([best.lat, best.lng], {
-        radius: 8, fillColor: SECTOR_COLORS[idx % SECTOR_COLORS.length],
-        color: '#000', weight: 2, fillOpacity: 1
-      }).addTo(samplingLayer)
-        .bindPopup(`<b>📍 Sektor ${idx + 1}</b><br>Azimuth: ${az}°`);
+      L.circleMarker(best, { radius: 6, fillColor: SECTOR_COLORS[idx % SECTOR_COLORS.length], color: '#000', weight: 2, fillOpacity: 1 })
+        .addTo(samplingLayer)
+        .bindPopup(`<b>📍 Sektor ${idx + 1}</b><br>Azimuth:${az}°`);
     }
   });
-
+  const found = Object.values(sp).filter(p => p !== null).length;
   const el = document.getElementById("samplingCount");
-  if (el) { el.textContent = `${dedupedPts.length} titik`; el.classList.remove('empty'); }
-
+  if (el) { el.textContent = `${found} titik`; el.classList.remove('empty'); }
   saveRouteSession();
-  alert(`✅ ${dedupedPts.length} titik sampling (interval 10m, ${Object.keys(sp).length} sektor teridentifikasi)`);
+  alert(`✅ ${found} titik sampling dari ${s.sectors.length} sektor`);
 }
 
 // ================= FILTER ISOLATED POINTS (OSRM TABLE) =================
