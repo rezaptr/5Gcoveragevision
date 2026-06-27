@@ -1,9 +1,11 @@
 'use strict';
 /* ================================================
-   evaluation.js v4
-   Fix: toggle switch sync peta kiri + analisis
-        5-range error legend
-        tinggi peta dikecilkan via CSS
+   evaluation.js v4.1
+   Fix:
+   - getTrend(): hapus icon property, render hanya text
+   - buildMetricTable(): hapus ${trend.icon} dari template
+   - Tombol "Reset & Import CSV Baru" ditambahkan
+   - handleCsvUpload: e.target.value = '' untuk allow re-upload
    ================================================ */
 
 let dtMap, simMap;
@@ -13,7 +15,7 @@ let siteIndex  = {};
 let dbpPerSite = {};
 let lineChartR = null;
 let lineChartS = null;
-let currentMode = 'rsrp'; // ← state toggle aktif
+let currentMode = 'rsrp';
 
 const SESSION_KEY = 'siteIndexData';
 const C    = 3e8;
@@ -30,14 +32,13 @@ const DIST_RANGES = [
 ];
 
 // ── 5-range error scale ───────────────────────────────────────────────────────
-// Over besar > 10 | Over kecil 3–10 | Akurat ±3 | Under kecil 3–10 | Under besar > 10
 function errorColor5(delta) {
   if (delta === null) return '#cccccc';
-  if (delta >  10) return '#ff3333';   // over besar
-  if (delta >   3) return '#fffb00';   // over kecil
-  if (delta >= -3) return '#70ff66';   // akurat
-  if (delta >= -10) return '#00c1e7';  // under kecil
-  return '#0042a5';                    // under besar
+  if (delta >  10) return '#ff3333';
+  if (delta >   3) return '#fffb00';
+  if (delta >= -3) return '#70ff66';
+  if (delta >= -10) return '#00c1e7';
+  return '#0042a5';
 }
 
 function errorLabel5(unit) {
@@ -64,7 +65,6 @@ const fmt2     = v => (v !== null && v !== undefined) ? v.toFixed(2) : '—';
 const fmtSign  = v => (v !== null && v !== undefined) ? (v >= 0 ? '+' : '') + v.toFixed(2) : '—';
 const byId     = id => document.getElementById(id);
 
-// RSRP color untuk peta DT
 function rsrpColor(v) {
   if (v === null) return '#ccc';
   if (v >= -85)  return '#0042a5';
@@ -73,7 +73,6 @@ function rsrpColor(v) {
   if (v >= -120) return '#fffb00';
   return '#ff3333';
 }
-// SINR color untuk peta DT
 function sinrColor(v) {
   if (v === null) return '#ccc';
   if (v >= 20) return '#0042a5';
@@ -105,7 +104,6 @@ function initMaps() {
   siteLayerDt  = L.layerGroup().addTo(dtMap);
   siteLayerSim = L.layerGroup().addTo(simMap);
 
-  // Sync kedua peta
   let syncing = false;
   dtMap.on('move', () => {
     if (syncing) return; syncing = true;
@@ -151,6 +149,9 @@ function attachListeners() {
   byId('uploadBtn')?.addEventListener('click', () => byId('csvInput').click());
   byId('csvInput')?.addEventListener('change', handleCsvUpload);
 
+  // Tombol Reset — kembali ke state awal tanpa reload halaman
+  byId('resetEvalBtn')?.addEventListener('click', resetEvaluation);
+
   byId('analyzeRsrpBtn')?.addEventListener('click', () => {
     currentMode = 'rsrp';
     runAnalysis();
@@ -159,66 +160,24 @@ function attachListeners() {
     currentMode = 'sinr';
     runAnalysis();
   });
-  // Listener toggle lama (mapModeRsrp / mapModeSinr) dihapus —
-  // tidak ada lagi di HTML
-}
- 
-
-// ── MODE SWITCH — sinkronisasi penuh ─────────────────────────────────────────
-function switchMode(mode) {
-  currentMode = mode;
-
-  // Update tombol aktif
-  byId('mapModeRsrp')?.classList.toggle('active', mode === 'rsrp');
-  byId('mapModeSinr')?.classList.toggle('active', mode === 'sinr');
-
-  if (!evalData.length) return;
-
-  // Update peta kiri (DT aktual — ganti warna sesuai mode)
-  renderDtMap(mode);
-  updateDtLegend(mode);
-
-  // Update peta kanan (error simulasi)
-  renderSimErrorMap(mode);
-  updateSimLegend(mode);
-
-  // Update analisis jika sudah pernah dijalankan
-  if (byId('resultsSection').style.display !== 'none') {
-    const mR = calcRangeMetrics('rsrp');
-    const mS = calcRangeMetrics('sinr');
-    buildConclusion(mR, mS, mode);
-  }
 }
 
-// ── CSV UPLOAD ────────────────────────────────────────────────────────────────
-function handleCsvUpload(e) {
-  const file = e.target.files[0]; if (!file) return;
-  showLoading('Membaca CSV...');
-  Papa.parse(file, {
-    header: true, dynamicTyping: true, skipEmptyLines: true,
-    complete: r => processCsv(r.data),
-    error:    err => { alert('❌ Gagal baca CSV: ' + err.message); hideLoading(); }
-  });
-  e.target.value = '';
-}
-
-function processCsv(rows) {
-  // ── RESET STATE ──────────────────────────────
+// ── [NEW] RESET EVALUATION ────────────────────────────────────────────────────
+// Bersihkan semua state dan UI tanpa reload halaman penuh.
+// Identik dengan processCsv() reset block, tapi tidak perlu file baru.
+function resetEvaluation() {
   evalData = [];
 
-  // Reset peta
   dtLayer.clearLayers();
   simLayer.clearLayers();
   siteLayerDt.clearLayers();
   siteLayerSim.clearLayers();
 
-  // Reset placeholder
   const dtPh  = byId('dtMapPlaceholder');
   const simPh = byId('simMapPlaceholder');
   if (dtPh)  dtPh.style.display  = 'flex';
   if (simPh) simPh.style.display = 'flex';
 
-  // Reset hasil analisis
   const resSection = byId('resultsSection');
   if (resSection) resSection.style.display = 'none';
 
@@ -233,23 +192,99 @@ function processCsv(rows) {
   if (tblEl) tblEl.innerHTML = `
     <tr><td colspan="9" class="td-empty">Klik Analisis untuk melihat hasil</td></tr>`;
 
-  // Reset chart
   if (lineChartR) { lineChartR.destroy(); lineChartR = null; }
   if (lineChartS) { lineChartS.destroy(); lineChartS = null; }
 
-  // Reset legend
   const dtLgnd  = byId('dtLegendBox');
   const simLgnd = byId('simLegendBox');
   if (dtLgnd)  dtLgnd.style.display  = 'none';
   if (simLgnd) simLgnd.style.display = 'none';
 
-  // Reset tombol
   const btnR = byId('analyzeRsrpBtn');
   const btnS = byId('analyzeSinrBtn');
   if (btnR) btnR.disabled = true;
   if (btnS) btnS.disabled = true;
 
-  // Reset status
+  // Reset input file agar file yang sama bisa diupload ulang
+  const csvInput = byId('csvInput');
+  if (csvInput) csvInput.value = '';
+
+  setStatus('csvStatus', 'CSV: —', '');
+
+  // Tampilkan konfirmasi singkat di status
+  setStatus('csvStatus', '✅ Reset. Silakan import CSV baru.', 'ok');
+}
+
+// ── MODE SWITCH ───────────────────────────────────────────────────────────────
+function switchMode(mode) {
+  currentMode = mode;
+  byId('mapModeRsrp')?.classList.toggle('active', mode === 'rsrp');
+  byId('mapModeSinr')?.classList.toggle('active', mode === 'sinr');
+  if (!evalData.length) return;
+  renderDtMap(mode);
+  updateDtLegend(mode);
+  renderSimErrorMap(mode);
+  updateSimLegend(mode);
+  if (byId('resultsSection').style.display !== 'none') {
+    const mR = calcRangeMetrics('rsrp');
+    const mS = calcRangeMetrics('sinr');
+    buildConclusion(mR, mS, mode);
+  }
+}
+
+// ── CSV UPLOAD ────────────────────────────────────────────────────────────────
+function handleCsvUpload(e) {
+  const file = e.target.files[0]; if (!file) return;
+  // [FIX] Reset value SEBELUM parse agar file yang sama bisa diupload ulang
+  e.target.value = '';
+  showLoading('Membaca CSV...');
+  Papa.parse(file, {
+    header: true, dynamicTyping: true, skipEmptyLines: true,
+    complete: r => processCsv(r.data),
+    error:    err => { alert('❌ Gagal baca CSV: ' + err.message); hideLoading(); }
+  });
+}
+
+function processCsv(rows) {
+  // ── RESET STATE ──────────────────────────────
+  evalData = [];
+  dtLayer.clearLayers();
+  simLayer.clearLayers();
+  siteLayerDt.clearLayers();
+  siteLayerSim.clearLayers();
+
+  const dtPh  = byId('dtMapPlaceholder');
+  const simPh = byId('simMapPlaceholder');
+  if (dtPh)  dtPh.style.display  = 'flex';
+  if (simPh) simPh.style.display = 'flex';
+
+  const resSection = byId('resultsSection');
+  if (resSection) resSection.style.display = 'none';
+
+  const concEl = byId('conclusionContent');
+  if (concEl) concEl.innerHTML = `
+    <div class="waiting-notice">
+      <i class="fas fa-satellite-dish"></i>
+      Klik Analisis untuk melihat kesimpulan
+    </div>`;
+
+  const tblEl = byId('metricTableBody');
+  if (tblEl) tblEl.innerHTML = `
+    <tr><td colspan="9" class="td-empty">Klik Analisis untuk melihat hasil</td></tr>`;
+
+  if (lineChartR) { lineChartR.destroy(); lineChartR = null; }
+  if (lineChartS) { lineChartS.destroy(); lineChartS = null; }
+
+  const dtLgnd  = byId('dtLegendBox');
+  const simLgnd = byId('simLegendBox');
+  if (dtLgnd)  dtLgnd.style.display  = 'none';
+  if (simLgnd) simLgnd.style.display = 'none';
+
+  const btnR = byId('analyzeRsrpBtn');
+  const btnS = byId('analyzeSinrBtn');
+  if (btnR) btnR.disabled = true;
+  if (btnS) btnS.disabled = true;
+
   setStatus('csvStatus', 'CSV: —', '');
 
   // ── PROSES ROWS ──────────────────────────────
@@ -274,7 +309,7 @@ function processCsv(rows) {
       : (isFinite(sinrSim) && isFinite(sinrAkt) ? sinrSim - sinrAkt : null);
 
     if (!isFinite(lat) || !isFinite(lng)) return;
-    if (!siteColorMap[site]) 
+    if (!siteColorMap[site])
       siteColorMap[site] = SITE_PALETTE[colorIdx++ % SITE_PALETTE.length];
 
     evalData.push({
@@ -300,14 +335,12 @@ function processCsv(rows) {
   const nS = evalData.filter(p => p.deltaSinr !== null).length;
   setStatus('csvStatus', `✅ ${evalData.length} titik | ${nR} RSRP | ${nS} SINR`, 'ok');
 
-  // Render peta dengan mode aktif saat ini
   renderDtMap(currentMode);
   renderSimErrorMap(currentMode);
   renderSiteMarkers();
   updateDtLegend(currentMode);
   updateSimLegend(currentMode);
 
-  // Sembunyikan placeholder setelah render
   if (dtPh)  dtPh.style.display  = 'none';
   if (simPh) simPh.style.display = 'none';
 
@@ -320,7 +353,6 @@ function processCsv(rows) {
 function renderDtMap(mode) {
   dtLayer.clearLayers();
   if (!evalData.length) return;
-
   evalData.forEach(p => {
     const val   = mode === 'sinr' ? p.sinrAkt : p.rsrpAkt;
     const color = mode === 'sinr' ? sinrColor(val) : rsrpColor(val);
@@ -334,7 +366,6 @@ function renderDtMap(mode) {
         ${mode.toUpperCase()}: <b>${val.toFixed(1)} ${unit}</b><br>
         Jarak: <b>${p.dist.toFixed(0)} m</b>`);
   });
-
   const bounds = evalData.map(p => [p.lat, p.lng]);
   if (bounds.length) dtMap.fitBounds(bounds);
 }
@@ -342,7 +373,6 @@ function renderDtMap(mode) {
 function renderSimErrorMap(mode) {
   simLayer.clearLayers();
   if (!evalData.length) return;
-
   evalData.forEach(p => {
     const delta = mode === 'sinr' ? p.deltaSinr : p.deltaRsrp;
     const color = errorColor5(delta);
@@ -370,7 +400,6 @@ function renderSiteMarkers() {
     }).bindPopup(`<b>📡 ${id}</b><br>H: ${s.height}m<br>dBP: ${dbpPerSite[id]?.toFixed(0) ?? '?'}m`);
     mkr().addTo(siteLayerDt);
     mkr().addTo(siteLayerSim);
-
     const lbl = L.marker([s.lat, s.lng], {
       icon: L.divIcon({
         className:'',
@@ -386,7 +415,6 @@ function renderSiteMarkers() {
 function updateDtLegend(mode) {
   const tbody = byId('dtLegendBody'); if (!tbody) return;
   byId('dtLegendTitle').textContent = mode === 'sinr' ? 'SS-SINR Aktual (dB)' : 'SS-RSRP Aktual (dBm)';
-
   const buckets = mode === 'sinr' ? [
     { label:'≥ 20 dB',      color:'#0042a5', fn: v => v >= 20  },
     { label:'10 – 20 dB',   color:'#00a955', fn: v => v >= 10 && v < 20 },
@@ -400,7 +428,6 @@ function updateDtLegend(mode) {
     { label:'-120 ~ -105 dBm', color:'#fffb00', fn: v => v >= -120 && v < -105 },
     { label:'< -120 dBm',      color:'#ff3333', fn: v => v < -120  },
   ];
-
   const vals  = evalData.map(p => mode === 'sinr' ? p.sinrAkt : p.rsrpAkt).filter(v => v !== null);
   const total = vals.length || 1;
   tbody.innerHTML = buckets.map(b => {
@@ -429,7 +456,6 @@ function updateSimLegend(mode) {
 // ── ANALYSIS ──────────────────────────────────────────────────────────────────
 function runAnalysis() {
   if (!evalData.length) return;
-  // Update tampilan peta sesuai mode yang dipilih sebelum analisis
   renderDtMap(currentMode);
   updateDtLegend(currentMode);
   renderSimErrorMap(currentMode);
@@ -485,7 +511,7 @@ function makeLineChart(ctxId, metrics, unit) {
         { label:`ME (${unit})`,   data: metrics.map(m => m.me   !== null ? +m.me.toFixed(2)   : null),
           borderColor:'#1F3C88', backgroundColor:'rgba(31,60,136,0.08)',
           borderWidth:2.5, pointRadius:5, pointBackgroundColor:'#1F3C88', tension:0.3, fill:false },
-        { label:`RMSE (${unit})`, data: metrics.map(m => m.rmse !== null ? +m.rmse.toFixed(2)  : null),
+        { label:`RMSE (${unit})`, data: metrics.map(m => m.rmse !== null ? +m.rmse.toFixed(2) : null),
           borderColor:'#e34a33', backgroundColor:'rgba(227,74,51,0.06)',
           borderWidth:2.5, pointRadius:5, pointBackgroundColor:'#e34a33', borderDash:[6,3], tension:0.3, fill:false },
         { label:`SD (${unit})`,   data: metrics.map(m => m.sd   !== null ? +m.sd.toFixed(2)   : null),
@@ -530,7 +556,7 @@ function buildMetricTable(mR, mS) {
         <td class="${meClass(ms.me)}">${fmtSign(ms.me)}</td>
         <td>${fmt2(ms.rmse)}</td>
         <td>${fmt2(ms.sd)}</td>
-        <td><span class="trend-badge ${trend.cls}">${trend.icon} ${trend.text}</span></td>
+        <td><span class="trend-badge ${trend.cls}">${trend.text}</span></td>
       </tr>`);
   });
   tbody.insertAdjacentHTML('beforeend', `
@@ -547,14 +573,16 @@ function buildMetricTable(mR, mS) {
     </tr>`);
 }
 
+// ── [FIX] getTrend — hapus property icon, hanya text + cls ───────────────────
 function getTrend(me) {
-  if (me === null) return { icon: '-', text: '-', cls: '' };
-  if (me >  10) return { text: 'Bias tinggi (+)',  cls: 'trend-over'   };
-  if (me >   3) return { text: 'Bias sedang (+)', cls: 'trend-over'   };
-  if (me >= -3) return { text: 'Bias rendah',     cls: 'trend-ok'    };
-  if (me >= -10) return { text: 'Bias sedang (−)', cls: 'trend-under' };
-  return              { text: 'Bias tinggi (−)',  cls: 'trend-under'  };
+  if (me === null) return { text: '—',              cls: ''            };
+  if (me >  10)   return { text: 'Bias tinggi (+)', cls: 'trend-over'  };
+  if (me >   3)   return { text: 'Bias sedang (+)', cls: 'trend-over'  };
+  if (me >= -3)   return { text: 'Bias rendah',     cls: 'trend-ok'   };
+  if (me >= -10)  return { text: 'Bias sedang (−)', cls: 'trend-under' };
+  return                 { text: 'Bias tinggi (−)', cls: 'trend-under' };
 }
+
 function meClass(me) {
   if (me === null) return '';
   if (Math.abs(me) > 10) return 'val-bad';
@@ -562,11 +590,9 @@ function meClass(me) {
   return 'val-ok';
 }
 
-// ── CONCLUSION — responsif terhadap mode ─────────────────────────────────────
+// ── CONCLUSION ────────────────────────────────────────────────────────────────
 function buildConclusion(mR, mS, mode) {
   const el = byId('conclusionContent'); if (!el) return;
-
-  // Pilih metrik sesuai mode aktif
   const metrics  = mode === 'sinr' ? mS : mR;
   const gMetric  = calcGlobalMetrics(mode);
   const unit     = mode === 'sinr' ? 'dB' : 'dBm';
@@ -578,8 +604,6 @@ function buildConclusion(mR, mS, mode) {
 
   const sitesInData = [...new Set(evalData.map(p=>p.site).filter(Boolean))];
   const dbpVals = sitesInData.map(id=>dbpPerSite[id]).filter(v=>v&&isFinite(v)).sort((a,b)=>a-b);
-  const dBP_min = dbpVals.length ? Math.min(...dbpVals) : null;
-  const dBP_max = dbpVals.length ? Math.max(...dbpVals) : null;
 
   const statusClass = Math.abs(gMetric.me||0) <= 5 ? 'verdict-ok' : Math.abs(gMetric.me||0) <= 10 ? 'verdict-warn' : 'verdict-bad';
   const statusIcon  = Math.abs(gMetric.me||0) <= 5 ? '✅' : '⚠️';
@@ -610,26 +634,26 @@ function buildConclusion(mR, mS, mode) {
         </div>
       </div>
 
-    <div class="finding-item">
-      <div class="finding-num">2</div>
-      <div class="finding-body">
-        <div class="finding-title">Pola Bias Sistematis per Jarak</div>
-        <div class="finding-text">
-          ${zonaOver.length
-          ? `Model menunjukkan <b>over-predict</b> (bias positif) di zona <b>${zonaOver.join(', ')}</b> — 
-              kondisi aktual lebih banyak halangan dibanding asumsi model stokastik.`
-          : ''}
-          ${zonaUnder.length
-          ? ` Over-predict berkurang dan bergeser ke <b>under-predict</b> di zona <b>${zonaUnder.join(', ')}</b> — 
-              model TR 38.901 tidak memperhitungkan kondisi lingkungan spesifik lokasi.`
-          : ''}
-          ${zonaAkurat.length
-          ? ` Bias paling rendah terjadi di zona <b>${zonaAkurat.join(', ')}</b>.`
-          : ''}
-          Pola ini konsisten dengan karakteristik model propagasi stokastik tanpa kalibrasi lokasi spesifik.
+      <div class="finding-item">
+        <div class="finding-num">2</div>
+        <div class="finding-body">
+          <div class="finding-title">Pola Bias Sistematis per Jarak</div>
+          <div class="finding-text">
+            ${zonaOver.length
+            ? `Model menunjukkan <b>over-predict</b> (bias positif) di zona <b>${zonaOver.join(', ')}</b> — 
+                kondisi aktual lebih banyak halangan dibanding asumsi model stokastik.`
+            : ''}
+            ${zonaUnder.length
+            ? ` Over-predict berkurang dan bergeser ke <b>under-predict</b> di zona <b>${zonaUnder.join(', ')}</b> — 
+                model TR 38.901 tidak memperhitungkan kondisi lingkungan spesifik lokasi.`
+            : ''}
+            ${zonaAkurat.length
+            ? ` Bias paling rendah terjadi di zona <b>${zonaAkurat.join(', ')}</b>.`
+            : ''}
+            Pola ini konsisten dengan karakteristik model propagasi stokastik tanpa kalibrasi lokasi spesifik.
+          </div>
         </div>
       </div>
-    </div>
 
       <div class="finding-item">
         <div class="finding-num">3</div>
@@ -662,4 +686,4 @@ function setStatus(id, msg, type) {
   el.className = `status-badge${type==='ok'?' uploaded':''}`;
 }
 
-console.log('evaluation.js v4 — toggle sync fix | 5-range error | tinggi peta CSS');
+console.log('evaluation.js v4.1 — getTrend icon fix | Reset button | re-upload CSV fix');
