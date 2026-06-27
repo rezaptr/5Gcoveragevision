@@ -166,6 +166,9 @@ function attachListeners() {
 // Bersihkan semua state dan UI tanpa reload halaman penuh.
 // Identik dengan processCsv() reset block, tapi tidak perlu file baru.
 function resetEvaluation() {
+  // Kill loading overlay dulu kalau masih ada
+  hideLoading();
+
   evalData = [];
 
   dtLayer.clearLayers();
@@ -173,13 +176,30 @@ function resetEvaluation() {
   siteLayerDt.clearLayers();
   siteLayerSim.clearLayers();
 
-  const dtPh  = byId('dtMapPlaceholder');
-  const simPh = byId('simMapPlaceholder');
-  if (dtPh)  dtPh.style.display  = 'flex';
-  if (simPh) simPh.style.display = 'flex';
+  // Destroy chart instances
+  if (lineChartR) { lineChartR.destroy(); lineChartR = null; }
+  if (lineChartS) { lineChartS.destroy(); lineChartS = null; }
 
+  // Sembunyikan results section (chart, tabel, analisis)
   const resSection = byId('resultsSection');
   if (resSection) resSection.style.display = 'none';
+
+  // Reset placeholder peta
+  const dtPh  = byId('dtMapPlaceholder');
+  const simPh = byId('simMapPlaceholder');
+  if (dtPh)  dtPh.style.display = 'flex';
+  if (simPh) simPh.style.display = 'flex';
+
+  // Reset legend
+  const dtLgnd  = byId('dtLegendBox');
+  const simLgnd = byId('simLegendBox');
+  if (dtLgnd)  dtLgnd.style.display = 'none';
+  if (simLgnd) simLgnd.style.display = 'none';
+
+  // Reset isi tabel dan kesimpulan
+  const tblEl = byId('metricTableBody');
+  if (tblEl) tblEl.innerHTML =
+    `<tr><td colspan="9" class="td-empty">Klik Analisis untuk melihat hasil</td></tr>`;
 
   const concEl = byId('conclusionContent');
   if (concEl) concEl.innerHTML = `
@@ -188,30 +208,16 @@ function resetEvaluation() {
       Klik Analisis untuk melihat kesimpulan
     </div>`;
 
-  const tblEl = byId('metricTableBody');
-  if (tblEl) tblEl.innerHTML = `
-    <tr><td colspan="9" class="td-empty">Klik Analisis untuk melihat hasil</td></tr>`;
-
-  if (lineChartR) { lineChartR.destroy(); lineChartR = null; }
-  if (lineChartS) { lineChartS.destroy(); lineChartS = null; }
-
-  const dtLgnd  = byId('dtLegendBox');
-  const simLgnd = byId('simLegendBox');
-  if (dtLgnd)  dtLgnd.style.display  = 'none';
-  if (simLgnd) simLgnd.style.display = 'none';
-
+  // Disable tombol analisis
   const btnR = byId('analyzeRsrpBtn');
   const btnS = byId('analyzeSinrBtn');
   if (btnR) btnR.disabled = true;
   if (btnS) btnS.disabled = true;
 
-  // Reset input file agar file yang sama bisa diupload ulang
+  // Reset file input
   const csvInput = byId('csvInput');
   if (csvInput) csvInput.value = '';
 
-  setStatus('csvStatus', 'CSV: —', '');
-
-  // Tampilkan konfirmasi singkat di status
   setStatus('csvStatus', '✅ Reset. Silakan import CSV baru.', 'ok');
 }
 
