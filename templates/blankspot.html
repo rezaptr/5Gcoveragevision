@@ -157,18 +157,41 @@
               <option value="los_nlos">Mixed</option>
             </select>
           </div>
+
+          <!-- REVISED: TX Power — dropdown 43/46/49 dBm -->
           <div>
             <label class="bso-label">TX Power (dBm)</label>
-            <input type="number" id="txGap" class="bso-input" value="46" min="20" max="60">
+            <select id="txGap" class="bso-input">
+              <option value="43">43 dBm</option>
+              <option value="46" selected>46 dBm</option>
+              <option value="49">49 dBm</option>
+            </select>
           </div>
+
           <div>
             <label class="bso-label">Frekuensi (MHz)</label>
             <input type="number" id="freqGap" class="bso-input" value="2300" min="700" max="28000" step="100">
           </div>
+
+          <!-- REVISED: Bandwidth — dropdown sesuai daftar NR -->
           <div>
-            <label class="bso-label">Bandwidth (MHz)</label>
-            <input type="number" id="bsoGap" class="bso-input" value="20" min="5" max="100" step="5">
+            <label class="bso-label">Bandwidth</label>
+            <select id="bsoGap" class="bso-input">
+              <option value="5">5 MHz</option>
+              <option value="10">10 MHz</option>
+              <option value="15">15 MHz</option>
+              <option value="20">20 MHz</option>
+              <option value="25">25 MHz</option>
+              <option value="30" selected>30 MHz</option>
+              <option value="40">40 MHz</option>
+              <option value="50">50 MHz</option>
+              <option value="60">60 MHz</option>
+              <option value="80">80 MHz</option>
+              <option value="90">90 MHz</option>
+              <option value="100">100 MHz</option>
+            </select>
           </div>
+
           <div>
             <label class="bso-label">Clutter</label>
             <select id="clutterGap" class="bso-input">

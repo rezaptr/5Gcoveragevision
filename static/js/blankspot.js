@@ -1,10 +1,10 @@
 'use strict';
 // ================================================
-// BLANK SPOT OPTIMIZER v2.1 — FIXED
-// Perbaikan:
-// 1. SINR dihitung dengan interferensi dari semua site (existing + baru)
-// 2. overlayGrids update sinrValue dengan benar
-// 3. Denominator before/after konsisten (hanya grid overlap)
+// BLANK SPOT OPTIMIZER v2.2
+// Revisi:
+// 1. Legend RSRP & SINR ranges diperbaiki
+// 2. TX Power via dropdown (43/46/49 dBm)
+// 3. Bandwidth via dropdown (5~100 MHz)
 // ================================================
 
 let mapBefore, mapAfter;
@@ -40,7 +40,7 @@ function getP() {
     TX_POWER: n('txGap', 46), FREQUENCY: n('freqGap', 2300),
     BANDWIDTH: bw, NF: nf, ANTENNA_Am: 25, BEAMWIDTH: 35,
     SCENARIO: s('scenarioGap','uma'), CONDITION: s('conditionGap','nlos'), CLUTTER: s('clutterGap','urban'),
-    THERMAL_NOISE_LIN: Math.pow(10, tn / 10), SINR_FLOOR: -10, SINR_CEIL: 40,
+    THERMAL_NOISE_LIN: Math.pow(10, tn / 10), SINR_FLOOR: -40, SINR_CEIL: 40,
   };
 }
 function getClutterLoss(n) {
@@ -100,35 +100,39 @@ function computeRSRP(dist, gainDb, hBS, sc, cond, lat, lon, sid, clutter, P) {
   return P.TX_POWER + gainDb - pathLoss(sc, cond, dist, P.FREQUENCY, hBS, MOBILE_H) - getClutterLoss(clutter) + spatialNoise(lat, lon, getShadowStd(sc, cond), sid);
 }
 
-// ─────────────────────────────────────────────────
-// FIX #1: Hitung SINR yang benar dengan interferensi
-// SINR = S / (I_existing + I_new + N)
-// S    = daya serving cell (site dengan RSRP tertinggi)
-// I    = jumlah daya semua interferer (selain serving)
-// N    = thermal noise
-// ─────────────────────────────────────────────────
 function computeSINR(servingRSRP_dbm, allRSRP_dbm_list, P) {
   const serving_lin = dbm2lin(servingRSRP_dbm);
-
-  // Kumpulkan semua interferer (selain serving cell)
   let interference_lin = 0;
   allRSRP_dbm_list.forEach(rsrp => {
-    if (rsrp === servingRSRP_dbm) return; // skip serving
-    // Hanya hitung interferer yang tidak terlalu lemah (dominance threshold)
+    if (rsrp === servingRSRP_dbm) return;
     if (servingRSRP_dbm - rsrp < DOMINANT_THRESHOLD_DB) {
       interference_lin += dbm2lin(rsrp) * IM_FACTOR;
     }
   });
-
   const sinr_lin = serving_lin / (interference_lin + P.THERMAL_NOISE_LIN);
   return Math.max(P.SINR_FLOOR, Math.min(P.SINR_CEIL, lin2dbm(sinr_lin)));
 }
 
 // ── Color & category ──────────────────────────────
-function getRSRPColor(v) { if(v>=-85)return'#0042a5';if(v>=-95)return'#00a955';if(v>=-105)return'#70ff66';if(v>=-120)return'#fffb00';if(v>=-140)return'#ff3333';return'#800000'; }
-function getSINRColor(v) { if(v>=20)return'#0042a5';if(v>=10)return'#00a955';if(v>=0)return'#70ff66';if(v>=-5)return'#fffb00';if(v>=-10)return'#ff3333';return'#800000'; }
+// RSRP: S1≥-85 | S2≥-95 | S3≥-105 | S4≥-120 | S5≥-140 | S6<-140
+function getRSRPColor(v) {
+  if (v >= -85)  return '#0042a5'; // S1 Excellent
+  if (v >= -95)  return '#00a955'; // S2 Good
+  if (v >= -105) return '#70ff66'; // S3 Moderate
+  if (v >= -120) return '#fffb00'; // S4 Poor
+  if (v >= -140) return '#ff3333'; // S5 Bad
+  return '#800000';                // S6 Very Bad
+}
+// SINR: S1≥20 | S2≥10 | S3≥0 | S4≥-5 | S5≥-40 | S6 unused
+function getSINRColor(v) {
+  if (v >= 20)  return '#0042a5'; // S1 Excellent
+  if (v >= 10)  return '#00a955'; // S2 Good
+  if (v >= 0)   return '#70ff66'; // S3 Moderate
+  if (v >= -5)  return '#fffb00'; // S4 Poor
+  return '#ff3333';               // S5 Bad (< -5, down to -40)
+}
 function getRSRPC(v)  { if(v>=-85)return'S1';if(v>=-95)return'S2';if(v>=-105)return'S3';if(v>=-120)return'S4';if(v>=-140)return'S5';return'S6'; }
-function getSINRC(v)  { if(v>=20)return'S1';if(v>=10)return'S2';if(v>=0)return'S3';if(v>=-5)return'S4';if(v>=-10)return'S5';return'S6'; }
+function getSINRC(v)  { if(v>=20)return'S1';if(v>=10)return'S2';if(v>=0)return'S3';if(v>=-5)return'S4';return'S5'; }
 function catName(c)   { return {S1:'Excellent',S2:'Good',S3:'Moderate',S4:'Poor',S5:'Bad',S6:'Very Bad'}[c]||'Unknown'; }
 const getColor = (metric, v) => metric==='rsrp' ? getRSRPColor(v) : getSINRColor(v);
 const getCat   = (metric, v) => metric==='rsrp' ? getRSRPC(v)     : getSINRC(v);
@@ -226,7 +230,16 @@ function showNoSessionState() {
 
 function prefillFromSession() {
   if (!gapData) return;
-  const set = (id, v) => { const e=document.getElementById(id); if(e&&v!=null) e.value=v; };
+  const set    = (id, v) => { const e=document.getElementById(id); if(e&&v!=null) e.value=v; };
+  const setSel = (id, v) => {
+    const e = document.getElementById(id);
+    if (!e || v == null) return;
+    // Untuk dropdown, cari option yang paling dekat dengan nilai
+    const opts = Array.from(e.options).map(o => parseFloat(o.value));
+    const closest = opts.reduce((a, b) => Math.abs(b - v) < Math.abs(a - v) ? b : a);
+    e.value = closest;
+  };
+
   set('latSite', gapData.recommendedLat?.toFixed(6));
   set('lngSite', gapData.recommendedLng?.toFixed(6));
   set('antennaGap', gapData.nearestSiteHeight || 30);
@@ -234,10 +247,15 @@ function prefillFromSession() {
   gapCenterLat = gapData.recommendedLat;
   gapCenterLng = gapData.recommendedLng;
   gapRadiusM   = gapData.estimatedRadius_m || 300;
+
   if (clusterSnapshot?.params) {
     const p = clusterSnapshot.params;
-    set('txGap', p.TX_POWER); set('freqGap', p.FREQUENCY); set('bsoGap', p.BANDWIDTH);
-    set('scenarioGap', p.SCENARIO); set('conditionGap', p.CONDITION); set('clutterGap', p.CLUTTER);
+    setSel('txGap',  p.TX_POWER);
+    set('freqGap',   p.FREQUENCY);
+    setSel('bsoGap', p.BANDWIDTH);
+    set('scenarioGap',  p.SCENARIO);
+    set('conditionGap', p.CONDITION);
+    set('clutterGap',   p.CLUTTER);
     if (clusterSnapshot.gridSize) set('gridGap', clusterSnapshot.gridSize);
   }
   if (gapData.recommendedLat && gapData.recommendedLng) {
@@ -374,26 +392,17 @@ function runOptimization() {
       const antennaH = parseInt(document.getElementById('antennaGap')?.value) || 30;
       azimuths = getAzimuths();
 
-      // Step 1: Hitung RSRP site baru per grid
-      const newSiteRSRP = computeNewSiteRSRP(P, gridSize, radius, antennaH);
-
-      // FIX #2: Step 2: Overlay dan hitung ulang SINR dengan benar
-      gapGridsAfter = overlayGridsWithSINR(gapGridsBefore, newSiteRSRP, P);
+      const newSiteRSRP  = computeNewSiteRSRP(P, gridSize, radius, antennaH);
+      gapGridsAfter      = overlayGridsWithSINR(gapGridsBefore, newSiteRSRP, P);
 
       renderAfterMap(gapGridsAfter);
       renderSectorFans();
-
-      // FIX #3: Delta panel pakai denominator konsisten (hanya grid overlap)
       renderDeltaPanel(gapGridsBefore, gapGridsAfter);
       hideLoading();
     } catch(err) { console.error('[BSO]', err); hideLoading(); alert('Error: '+err.message); }
   }, 200);
 }
 
-// ─────────────────────────────────────────────────
-// FIX #1: Hitung RSRP site baru, return sebagai Map
-// key = "lat_lon" rounded ke gridSize
-// ─────────────────────────────────────────────────
 function computeNewSiteRSRP(P, gridSize, radius, antennaH) {
   const lat0 = currentSiteLocation.lat, lng0 = currentSiteLocation.lng;
   const mpdLat = 111320;
@@ -413,17 +422,14 @@ function computeNewSiteRSRP(P, gridSize, radius, antennaH) {
       const rsrp   = computeRSRP(dist, gainDb, antennaH, P.SCENARIO, P.CONDITION, lat, lon, 'SITE_BARU', P.CLUTTER, P);
       const rsrpC  = Math.max(RX_FLOOR, rsrp);
 
-      // KEY: gunakan index integer dari lat dan lon masing-masing
       const iLat = Math.round(lat / dLat);
       const iLon = Math.round(lon / dLon);
       const key  = `${iLat},${iLon}`;
 
-      // Simpan juga bounds grid untuk render
       const half_lat = dLat / 2;
       const half_lon = dLon / 2;
       rsrpMap.set(key, {
-        rsrp: rsrpC,
-        lat, lon,
+        rsrp: rsrpC, lat, lon,
         bounds: [
           [lat - half_lat, lon - half_lon],
           [lat - half_lat, lon + half_lon],
@@ -433,29 +439,17 @@ function computeNewSiteRSRP(P, gridSize, radius, antennaH) {
       });
     }
   }
-
-  console.log('[BSO] newSiteRSRP size:', rsrpMap.size);
   return rsrpMap;
 }
 
-// ─────────────────────────────────────────────────
-// FIX #2: Overlay grid + hitung ulang SINR yang benar
-// Alur per grid:
-//   1. Cek apakah site baru punya sinyal di grid ini
-//   2. Tentukan serving cell = site dengan RSRP tertinggi
-//   3. Hitung SINR = serving / (semua interferer + noise)
-//   4. Hanya update grid yang sudah ada di before (denominator konsisten)
-// ─────────────────────────────────────────────────
 function overlayGridsWithSINR(beforeGrids, newSiteRSRP, P) {
   const gridSize = parseInt(document.getElementById('gridGap')?.value) || 50;
   const mpdLat   = 111320;
   const mpdLon   = 111320 * Math.cos(currentSiteLocation.lat * Math.PI / 180);
   const dLat     = gridSize / mpdLat;
   const dLon     = gridSize / mpdLon;
-
   const beforeKeys = new Set();
 
-  // Update grid existing
   const updatedGrids = beforeGrids.map(g => {
     const gridCopy = { ...g };
     const gLat = g.lat;
@@ -489,29 +483,23 @@ function overlayGridsWithSINR(beforeGrids, newSiteRSRP, P) {
         gridCopy.sinrValue = computeSINR(g.rsrpValue, allSignals, P);
       }
     }
-
     return gridCopy;
   });
 
-  // Tambah grid BARU dari site baru yang tidak overlap dengan before
   let newGridCount = 0;
   newSiteRSRP.forEach((entry, key) => {
     if (beforeKeys.has(key)) return;
     const sinrValue = computeSINR(entry.rsrp, [entry.rsrp], P);
     updatedGrids.push({
-      lat: entry.lat,
-      lon: entry.lon,
-      lng: entry.lon,
+      lat: entry.lat, lon: entry.lon, lng: entry.lon,
       bounds: entry.bounds,
-      rsrpValue: entry.rsrp,
-      sinrValue,
-      servingSiteId: 'SITE_BARU',
-      _isNew: true,
+      rsrpValue: entry.rsrp, sinrValue,
+      servingSiteId: 'SITE_BARU', _isNew: true,
     });
     newGridCount++;
   });
 
-  console.log('[BSO] before grids:', beforeGrids.length, '| new grids added:', newGridCount, '| total after:', updatedGrids.length);
+  console.log('[BSO] before:', beforeGrids.length, '| new added:', newGridCount, '| total after:', updatedGrids.length);
   return updatedGrids;
 }
 
@@ -544,14 +532,9 @@ function renderSectorFans() {
   });
 }
 
-// ─────────────────────────────────────────────────
-// FIX #3: Delta panel — denominator KONSISTEN
-// before.length === after.length karena after hanya
-// update grid existing, tidak tambah grid baru
-// ─────────────────────────────────────────────────
 function renderDeltaPanel(before, after) {
   const gridSize = parseInt(document.getElementById('gridGap')?.value) || 50;
-  const afterForStats = after.filter(g => !g._isNew); // denominator konsisten
+  const afterForStats = after.filter(g => !g._isNew);
   const bStats = calcStats(before);
   const aStats = calcStats(afterForStats);
   const gridKm2 = (gridSize / 1000) ** 2;
@@ -563,7 +546,6 @@ function renderDeltaPanel(before, after) {
   const blankAfter  = ((aStats.cats.S5||0) + (aStats.cats.S6||0)) * gridKm2;
   const blankDelta  = blankBefore - blankAfter;
 
-  // S1+S2+S3 untuk perbandingan utama
   const s123B = ((bStats.cats.S1||0) + (bStats.cats.S2||0) + (bStats.cats.S3||0)) / total * 100;
   const s123A = ((aStats.cats.S1||0) + (aStats.cats.S2||0) + (aStats.cats.S3||0)) / total * 100;
   const s123D = s123A - s123B;
@@ -612,24 +594,15 @@ function renderDeltaPanel(before, after) {
 }
 
 function calcVerdict(bStats, aStats, total) {
-  const goodCats = ['S1', 'S2', 'S3']; // S3 = Moderate = layak
-  const badCats  = ['S4', 'S5', 'S6'];
-  let totalGoodImprovement = 0, totalBadReduction = 0, anyImprovement = false;
-  goodCats.forEach(c => {
-    const b = (bStats.cats[c]||0) / total * 100;
-    const a = (aStats.cats[c]||0) / total * 100;
-    if (a - b > 0.5) { totalGoodImprovement += (a - b); anyImprovement = true; }
-  });
-  badCats.forEach(c => {
-    const b = (bStats.cats[c]||0) / total * 100;
-    const a = (aStats.cats[c]||0) / total * 100;
-    if (b - a > 0.5) { totalBadReduction += (b - a); anyImprovement = true; }
-  });
+  const goodCats = ['S1','S2','S3'], badCats = ['S4','S5','S6'];
+  let anyImprovement = false;
+  goodCats.forEach(c => { if (((aStats.cats[c]||0)-(bStats.cats[c]||0))/total*100 > 0.5) anyImprovement = true; });
+  badCats.forEach(c =>  { if (((bStats.cats[c]||0)-(aStats.cats[c]||0))/total*100 > 0.5) anyImprovement = true; });
   const s123Delta = (
-    ((aStats.cats.S1||0) + (aStats.cats.S2||0) + (aStats.cats.S3||0)) -
-    ((bStats.cats.S1||0) + (bStats.cats.S2||0) + (bStats.cats.S3||0))
+    ((aStats.cats.S1||0)+(aStats.cats.S2||0)+(aStats.cats.S3||0)) -
+    ((bStats.cats.S1||0)+(bStats.cats.S2||0)+(bStats.cats.S3||0))
   ) / total * 100;
-  return { anyImprovement, totalGoodImprovement, totalBadReduction, s1Delta: s123Delta };
+  return { anyImprovement, s1Delta: s123Delta };
 }
 
 function calcStats(grids) {
@@ -641,6 +614,7 @@ function calcStats(grids) {
   });
   return { cats, total:grids.length };
 }
+
 function updateMiniStats(which, grids) {
   const el=document.getElementById(which==='before'?'bsoBeforeStats':'bsoAfterStats');
   if (!el) return;
@@ -650,10 +624,11 @@ function updateMiniStats(which, grids) {
 }
 function renderMiniStatHTML(stats, label, color) {
   const total = stats.total || 1;
-  const s123 = ((stats.cats.S1||0) + (stats.cats.S2||0) + (stats.cats.S3||0)) / total * 100;
+  const s123 = ((stats.cats.S1||0)+(stats.cats.S2||0)+(stats.cats.S3||0)) / total * 100;
   return `<div class="bso-mini-stat" style="border-left-color:${color}"><span class="bso-ms-label">${label}</span><span class="bso-ms-val">${s123.toFixed(1)}%</span><span class="bso-ms-sub">S1+S2+S3 (${stats.total} grid)</span></div>`;
 }
 
+// ── LEGEND — REVISED ranges ───────────────────────
 function updateLegend(which, grids) {
   const elId  = which === 'before' ? 'bsoLegendBefore' : 'bsoLegendAfter';
   const el    = document.getElementById(elId);
@@ -661,26 +636,40 @@ function updateLegend(which, grids) {
   if (!el || !tbody) return;
   el.style.display = 'block';
   el.querySelector('.bso-legend-title').textContent = currentCoverageType === 'rsrp' ? 'SS-RSRP (dBm)' : 'SS-SINR (dB)';
+
   const metric = currentCoverageType;
-  const rows = metric === 'rsrp'
-    ? [
-        { cat:'S1', color:'#0042a5', range:'-85 ~ 0' },
-        { cat:'S2', color:'#00a955', range:'-95 ~ -85' },
-        { cat:'S3', color:'#70ff66', range:'-105 ~ -95' },
-        { cat:'S4', color:'#fffb00', range:'-120 ~ -105' },
-        { cat:'S5', color:'#ff3333', range:'-140 ~ -120' },   // fix: was "< -120"
-      ]
-    : [
-        { cat:'S1', color:'#0042a5', range:'≥ 20 dB' },
-        { cat:'S2', color:'#00a955', range:'10 ~ 20 dB' },
-        { cat:'S3', color:'#70ff66', range:'0 ~ 10 dB' },
-        { cat:'S4', color:'#fffb00', range:'-5 ~ 0 dB' },
-        { cat:'S5', color:'#ff3333', range:'-10 ~ -5 dB' },   // fix: was "< -5"
-      ];
+
+  // REVISED: SS-RSRP ranges
+  const rsrpRows = [
+    { cat:'S1', color:'#0042a5', range:'-85 ~ 0' },
+    { cat:'S2', color:'#00a955', range:'-95 ~ -85' },
+    { cat:'S3', color:'#70ff66', range:'-105 ~ -95' },
+    { cat:'S4', color:'#fffb00', range:'-120 ~ -105' },
+    { cat:'S5', color:'#ff3333', range:'-140 ~ -120' },
+  ];
+
+  // REVISED: SS-SINR ranges
+  const sinrRows = [
+    { cat:'S1', color:'#0042a5', range:'20 ~ 40 dB' },
+    { cat:'S2', color:'#00a955', range:'10 ~ 20 dB' },
+    { cat:'S3', color:'#70ff66', range:'0 ~ 10 dB' },
+    { cat:'S4', color:'#fffb00', range:'-5 ~ 0 dB' },
+    { cat:'S5', color:'#ff3333', range:'-40 ~ -5 dB' },
+  ];
+
+  const rows = metric === 'rsrp' ? rsrpRows : sinrRows;
   const total = grids.length || 1;
+
   tbody.innerHTML = rows.map(r => {
-    const v = grids.filter(g => getCat(metric, metric==='rsrp' ? g.rsrpValue : (g.sinrValue ?? g.rsrpValue)) === r.cat).length;
-    return `<tr><td><div style="width:12px;height:12px;background:${r.color};border-radius:2px;display:inline-block;"></div></td><td>${r.range}</td><td><b>${(v/total*100).toFixed(1)}%</b></td></tr>`;
+    const v = grids.filter(g => {
+      const val = metric === 'rsrp' ? g.rsrpValue : (g.sinrValue ?? g.rsrpValue);
+      return getCat(metric, val) === r.cat;
+    }).length;
+    return `<tr>
+      <td><div style="width:12px;height:12px;background:${r.color};border-radius:2px;display:inline-block;"></div></td>
+      <td>${r.range}</td>
+      <td><b>${(v/total*100).toFixed(1)}%</b></td>
+    </tr>`;
   }).join('');
 }
 
@@ -693,4 +682,4 @@ function showLoading(text) {
 }
 function hideLoading() { document.getElementById('bsoLoading')?.remove(); }
 
-console.log('blankspot.js v2.1 — SINR fix | Denominator konsisten | Interferensi proper');
+console.log('blankspot.js v2.2 — Legend ranges fixed | TX Power & BW dropdown');

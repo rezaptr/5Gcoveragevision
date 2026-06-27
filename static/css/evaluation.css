@@ -278,7 +278,7 @@
   padding: 3px 9px; border-radius: 20px;
   font-size: 10px; font-weight: 700; white-space: nowrap;
 }
-.trend-ok    { background: #e6f4ea; color: #1a6b2e; }
+.trend-ok    { background: #e8f5e9; color: #2e7d32; }   /* bias rendah — tetap hijau */
 .trend-over  { background: #fff3e0; color: #b45309; }
 .trend-under { background: #fce8e6; color: #c0392b; }
 

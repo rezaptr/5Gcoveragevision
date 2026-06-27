@@ -203,7 +203,56 @@ function handleCsvUpload(e) {
 }
 
 function processCsv(rows) {
+  // ── RESET STATE ──────────────────────────────
   evalData = [];
+
+  // Reset peta
+  dtLayer.clearLayers();
+  simLayer.clearLayers();
+  siteLayerDt.clearLayers();
+  siteLayerSim.clearLayers();
+
+  // Reset placeholder
+  const dtPh  = byId('dtMapPlaceholder');
+  const simPh = byId('simMapPlaceholder');
+  if (dtPh)  dtPh.style.display  = 'flex';
+  if (simPh) simPh.style.display = 'flex';
+
+  // Reset hasil analisis
+  const resSection = byId('resultsSection');
+  if (resSection) resSection.style.display = 'none';
+
+  const concEl = byId('conclusionContent');
+  if (concEl) concEl.innerHTML = `
+    <div class="waiting-notice">
+      <i class="fas fa-satellite-dish"></i>
+      Klik Analisis untuk melihat kesimpulan
+    </div>`;
+
+  const tblEl = byId('metricTableBody');
+  if (tblEl) tblEl.innerHTML = `
+    <tr><td colspan="9" class="td-empty">Klik Analisis untuk melihat hasil</td></tr>`;
+
+  // Reset chart
+  if (lineChartR) { lineChartR.destroy(); lineChartR = null; }
+  if (lineChartS) { lineChartS.destroy(); lineChartS = null; }
+
+  // Reset legend
+  const dtLgnd  = byId('dtLegendBox');
+  const simLgnd = byId('simLegendBox');
+  if (dtLgnd)  dtLgnd.style.display  = 'none';
+  if (simLgnd) simLgnd.style.display = 'none';
+
+  // Reset tombol
+  const btnR = byId('analyzeRsrpBtn');
+  const btnS = byId('analyzeSinrBtn');
+  if (btnR) btnR.disabled = true;
+  if (btnS) btnS.disabled = true;
+
+  // Reset status
+  setStatus('csvStatus', 'CSV: —', '');
+
+  // ── PROSES ROWS ──────────────────────────────
   const siteColorMap = {};
   let colorIdx = 0;
 
@@ -225,23 +274,26 @@ function processCsv(rows) {
       : (isFinite(sinrSim) && isFinite(sinrAkt) ? sinrSim - sinrAkt : null);
 
     if (!isFinite(lat) || !isFinite(lng)) return;
-    if (!siteColorMap[site]) siteColorMap[site] = SITE_PALETTE[colorIdx++ % SITE_PALETTE.length];
+    if (!siteColorMap[site]) 
+      siteColorMap[site] = SITE_PALETTE[colorIdx++ % SITE_PALETTE.length];
 
     evalData.push({
-      idx: idx+1, lat, lng, site,
-      siteColor: siteColorMap[site] || '#888',
-      dist: isFinite(dist) ? dist : 0,
-      rsrpSim: isFinite(rsrpSim) ? rsrpSim : null,
-      sinrSim: isFinite(sinrSim) ? sinrSim : null,
-      rsrpAkt: isFinite(rsrpAkt) ? rsrpAkt : null,
-      sinrAkt: isFinite(sinrAkt) ? sinrAkt : null,
+      idx: idx + 1, lat, lng, site,
+      siteColor : siteColorMap[site] || '#888',
+      dist      : isFinite(dist) ? dist : 0,
+      rsrpSim   : isFinite(rsrpSim) ? rsrpSim : null,
+      sinrSim   : isFinite(sinrSim) ? sinrSim : null,
+      rsrpAkt   : isFinite(rsrpAkt) ? rsrpAkt : null,
+      sinrAkt   : isFinite(sinrAkt) ? sinrAkt : null,
       deltaRsrp, deltaSinr,
       dBP: site && dbpPerSite[site] ? dbpPerSite[site] : null,
     });
   });
 
   if (!evalData.length) {
-    hideLoading(); alert('❌ Tidak ada data valid. Pastikan file adalah hasil export SimDT.'); return;
+    hideLoading();
+    alert('❌ Tidak ada data valid. Pastikan file adalah hasil export SimDT.');
+    return;
   }
 
   const nR = evalData.filter(p => p.deltaRsrp !== null).length;
@@ -254,9 +306,14 @@ function processCsv(rows) {
   renderSiteMarkers();
   updateDtLegend(currentMode);
   updateSimLegend(currentMode);
+
+  // Sembunyikan placeholder setelah render
+  if (dtPh)  dtPh.style.display  = 'none';
+  if (simPh) simPh.style.display = 'none';
+
   hideLoading();
-  byId('analyzeRsrpBtn').disabled = false;
-  byId('analyzeSinrBtn').disabled = false;
+  if (btnR) btnR.disabled = false;
+  if (btnS) btnS.disabled = false;
 }
 
 // ── MAP RENDER ────────────────────────────────────────────────────────────────
@@ -491,15 +548,17 @@ function buildMetricTable(mR, mS) {
 }
 
 function getTrend(me) {
-  if (me === null) return { icon:'—', text:'—', cls:'' };
-  if (me >  3) return { icon:'🔼', text:'Over-predict',  cls:'trend-over'  };
-  if (me < -3) return { icon:'🔽', text:'Under-predict', cls:'trend-under' };
-  return { icon:'✅', text:'Akurat', cls:'trend-ok' };
+  if (me === null) return { icon: '-', text: '-', cls: '' };
+  if (me >  10) return { text: 'Bias tinggi (+)',  cls: 'trend-over'   };
+  if (me >   3) return { text: 'Bias sedang (+)', cls: 'trend-over'   };
+  if (me >= -3) return { text: 'Bias rendah',     cls: 'trend-ok'    };
+  if (me >= -10) return { text: 'Bias sedang (−)', cls: 'trend-under' };
+  return              { text: 'Bias tinggi (−)',  cls: 'trend-under'  };
 }
 function meClass(me) {
   if (me === null) return '';
-  if (Math.abs(me) > 8) return 'val-bad';
-  if (Math.abs(me) > 4) return 'val-warn';
+  if (Math.abs(me) > 10) return 'val-bad';
+  if (Math.abs(me) >  5) return 'val-warn';
   return 'val-ok';
 }
 
@@ -551,18 +610,26 @@ function buildConclusion(mR, mS, mode) {
         </div>
       </div>
 
-      <div class="finding-item">
-        <div class="finding-num">2</div>
-        <div class="finding-body">
-          <div class="finding-title">Pengaruh Breakpoint Distance</div>
-          <div class="finding-text">
-            ${dBP_min !== null
-              ? `Site dalam data memiliki rentang dBP <b>${dBP_min.toFixed(0)}m – ${dBP_max.toFixed(0)}m</b> akibat variasi tinggi antena.
-                 Di rentang jarak yang beririsan dengan zona ini, error bervariasi lebih besar karena slope path loss bergantung pada site mana yang menjadi serving cell.`
-              : 'Data site tidak tersedia untuk analisis breakpoint distance.'}
-          </div>
+    <div class="finding-item">
+      <div class="finding-num">2</div>
+      <div class="finding-body">
+        <div class="finding-title">Pola Bias Sistematis per Jarak</div>
+        <div class="finding-text">
+          ${zonaOver.length
+          ? `Model menunjukkan <b>over-predict</b> (bias positif) di zona <b>${zonaOver.join(', ')}</b> — 
+              kondisi aktual lebih banyak halangan dibanding asumsi model stokastik.`
+          : ''}
+          ${zonaUnder.length
+          ? ` Over-predict berkurang dan bergeser ke <b>under-predict</b> di zona <b>${zonaUnder.join(', ')}</b> — 
+              model TR 38.901 tidak memperhitungkan kondisi lingkungan spesifik lokasi.`
+          : ''}
+          ${zonaAkurat.length
+          ? ` Bias paling rendah terjadi di zona <b>${zonaAkurat.join(', ')}</b>.`
+          : ''}
+          Pola ini konsisten dengan karakteristik model propagasi stokastik tanpa kalibrasi lokasi spesifik.
         </div>
       </div>
+    </div>
 
       <div class="finding-item">
         <div class="finding-num">3</div>
