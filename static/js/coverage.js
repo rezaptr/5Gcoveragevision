@@ -24,9 +24,11 @@ const SITE_BORDER_COLORS = ['#ffffff','#ff6b6b','#4ecdc4','#ffe66d','#a29bfe','#
 // ── Default & konstanta fisik ─────────────────────────────────────────────────
 const PARAM_DEFAULTS = {
   TX_POWER  : 46,
+  ANTENNA_GAIN: 8,   // [ALIGN] G_E,max — 3GPP TR 38.901 Table 7.3-1, disamakan dengan dtsimulation.js
+  CABLE_LOSS  : 0.5, // [ALIGN] disamakan dengan dtsimulation.js
   FREQUENCY : 2300,
   BANDWIDTH : 30,
-  ANTENNA_Am: 25,
+  ANTENNA_Am: 30,    // [ALIGN] 25 → 30 dB, 3GPP TR 38.901 Table 7.3-1
   BEAMWIDTH : 65,
   NF        : 7,
   SCENARIO  : 'uma',
@@ -50,7 +52,6 @@ const INTERFERENCE_MARGIN_FACTOR = Math.pow(10, INTERFERENCE_MARGIN_DB / 10);
  * [FIX-4] Dominant interferer threshold [3GPP TR 36.942 §A.1]
  * Hanya sektor dengan RSRP > serving_RSRP - threshold yang dihitung
  * sebagai interferensi signifikan.
- * 20 dB: sektor 20 dB di bawah serving berkontribusi < 1% ke total I.
  */
 const DOMINANT_INTERFERER_THRESHOLD_DB = 30;
 
@@ -60,13 +61,13 @@ const DOMINANT_INTERFERER_THRESHOLD_DB = 30;
 const SHADOW_STD_3GPP = {
   uma_los    : 4.0,
   uma_nlos   : 6.0,
-  uma_los_nlos: 5.5,   // [FIX-1] ditambahkan — antara LOS dan NLOS, dominan NLOS
+  uma_los_nlos: 5.5,   
   umi_los    : 4.0,
   umi_nlos   : 7.82,
-  umi_los_nlos: 7.0,   // [FIX-1] ditambahkan
+  umi_los_nlos: 7.0,  
   rma_los    : 4.0,
   rma_nlos   : 8.0,
-  rma_los_nlos: 6.5,   // [FIX-1] ditambahkan
+  rma_los_nlos: 6.5,   
 };
 
   const CLUTTER_LOSS_DB = {
@@ -81,8 +82,48 @@ const SHADOW_STD_3GPP = {
 const GAP_CFG = {
   RSRP_WEAK:-105, RSRP_BLANK:-120,
   MIN_CLUSTER:3, CLUSTER_DIST_M:80, MAX_NEIGHBOURS:6,
+  // [FIX-17b] SINR_POOR: dipakai untuk MEMPERLUAS definisi weak_coverage
+  // yang SUDAH ADA — bukan kategori baru terpisah. Kasus nyata: cluster
+  // site padat/overlap → RSRP hampir selalu bagus (minimal ada 1 site yang
+  // jangkau), sehingga blank/weak berbasis RSRP jarang muncul — TAPI SINR
+  // bisa tetap jelek karena interferensi antar site. Sel begini SEKARANG
+  // ikut dihitung sebagai weak_coverage (dapat marker ⚠️, ikut notifikasi,
+  // ikut tombol "Rencanakan Site Baru" — sama seperti weak_coverage biasa),
+  // supaya tetap masuk alur Blank Spot Optimizer yang SAMA seperti sebelumnya
+  // (tidak menambah kategori/tipe baru yang belum ada di rancangan awal).
+  SINR_POOR: -5,
 };
+// [ALIGN3] CATATAN: constant COVERAGE_THRESHOLD_DBM yang dulu dipakai untuk
+// MEMOTONG grid (skip titik dengan RSRP di bawah -120) sudah DIHAPUS —
+// itu ternyata membuat bin terlemah di legend (-140~-120) mustahil pernah
+// muncul, kontradiksi dengan desain legend yang sudah ada. Sekarang semua
+// titik yang terhitung tetap ditampilkan apa adanya (termasuk yang sangat
+// lemah, S5/S6) — sesuai definisi legend asli. Batas AREA PENCARIAN (bukan
+// batas warna) sekarang dihitung otomatis dari fisika, lihat
+// solveMaxDistanceForThreshold() di bawah.
 const ORG = { AZIMUTH_WAVES:7, AZIMUTH_AMP:0.28, CORR_LENGTH_M:120, NOISE_OCTAVES:4 };
+
+/**
+ * [ALIGN3] Menghitung jarak MAKSIMUM (boresight, arah terkuat sektor) di
+ * mana RSRP baru menembus ambang tertentu — dipakai untuk menentukan
+ * SEBERAPA LUAS area yang perlu dihitung, BUKAN untuk memotong bentuk
+ * coverage. Ini menggantikan pendekatan lama (radius manual × konstanta
+ * tetap) yang selalu menghasilkan lingkaran, karena bentuk lingkaran itu
+ * datang dari batas pencarian itu sendiri, bukan dari perhitungan sinyal.
+ * Dengan batas pencarian yang cukup luas (dihitung dari fisika riil),
+ * bentuk akhir yang muncul murni ditentukan oleh RSRP asli (pola antena,
+ * path loss, clutter) — organik, bukan geometris.
+ */
+function solveMaxDistanceForThreshold(sc,cond,freqMhz,hBS,hUT,eirpDbm,thresholdDbm){
+  const rsrpAt = d => eirpDbm - pathLoss(sc,cond,d,freqMhz,hBS,hUT);
+  let lo=10, hi=2000;
+  while(rsrpAt(hi) > thresholdDbm && hi < 200000) hi *= 1.6;
+  for(let i=0;i<50;i++){
+    const mid=(lo+hi)/2;
+    if(rsrpAt(mid) > thresholdDbm) lo=mid; else hi=mid;
+  }
+  return hi;
+}
 
 // ── Live param reader ─────────────────────────────────────────────────────────
 function getParams() {
@@ -96,6 +137,8 @@ function getParams() {
 
   return {
     TX_POWER     : num('rf_txpower',   PARAM_DEFAULTS.TX_POWER),
+    ANTENNA_GAIN : PARAM_DEFAULTS.ANTENNA_GAIN,
+    CABLE_LOSS   : PARAM_DEFAULTS.CABLE_LOSS,
     FREQUENCY    : num('rf_frequency', PARAM_DEFAULTS.FREQUENCY),
     BANDWIDTH    : bwMhz,
     BANDWIDTH_HZ : bwHz,
@@ -166,7 +209,15 @@ function pathLoss(scenario, condition, dist_m, freq_mhz, hBS, hUT) {
 }
 
 // ── Antenna gain TR 36.942 ────────────────────────────────────────────────────
-function antennaGain(offset, bw, Am) { return -Math.min(12*(offset/(bw/2))**2, Am); }
+// [FIX-6] BUG FIX: offset/(bw/2) → offset/bw
+// Definisi 3GPP TR 36.942 §4.2: A(θ) = -min[12·(θ/θ_3dB)^2, Am], di mana
+// θ_3dB ADALAH beamwidth penuh (full 3dB beamwidth), BUKAN setengahnya.
+// Sanity check: pada θ = beamwidth/2 (tepi 3dB beamwidth), formula yang
+// benar harus menghasilkan tepat -3dB — itulah definisi "3dB beamwidth".
+//   Salah (offset/(bw/2)): di θ=bw/2 → -12·(1)^2 = -12dB   ✗ (harusnya -3dB)
+//   Benar (offset/bw)    : di θ=bw/2 → -12·(0.5)^2 = -3dB  ✓
+// Konsisten dengan dtsimulation.js: antennaGain(angOff){ return -Math.min(12*(angOff/CAL.BEAMWIDTH)**2, CAL.ANTENNA_Am); }
+function antennaGain(offset, bw, Am) { return -Math.min(12*(offset/bw)**2, Am); }
 function bestSectorGain(brng, sectors, bw, Am) {
   if(!sectors?.length)return{gain:0,sectorIdx:0};
   let best=-Infinity,idx=0;
@@ -175,7 +226,23 @@ function bestSectorGain(brng, sectors, bw, Am) {
 }
 
 // ── Shadow fading spatial hash ─────────────────────────────────────────────
-const SPATIAL_GRID_SIZE=0.0005;
+// [ALIGN] D_COR per skenario/kondisi (3GPP TR 38.901 Table 7.5-6), disamakan
+// persis dengan dtsimulation.js — menggantikan grid tetap 0.0005° yang
+// sebelumnya dipakai untuk SEMUA skenario tanpa membedakan decorrelation
+// distance UMa/UMi/RMa yang sebenarnya jauh berbeda.
+const D_COR_DEG = {
+  uma_los  : 37  / 111320,
+  uma_nlos : 50  / 111320,
+  uma_los_nlos: 50 / 111320,
+  umi_los  : 10  / 111320,
+  umi_nlos : 13  / 111320,
+  umi_los_nlos: 13 / 111320,
+  rma_los  : 37  / 111320,
+  rma_nlos : 120 / 111320,
+  rma_los_nlos: 120 / 111320,
+};
+const D_COR_DEFAULT = 50 / 111320;
+
 function hashInt(n){n=((n>>>16)^n)*0x45d9f3b;n=((n>>>16)^n)*0x45d9f3b;return((n>>>16)^n)>>>0;}
 
 /**
@@ -184,23 +251,90 @@ function hashInt(n){n=((n>>>16)^n)*0x45d9f3b;n=((n>>>16)^n)*0x45d9f3b;return((n>
  * yang tidak merepresentasikan distribusi log-normal realistis.
  * Seed per-site dipertahankan (berbeda dari sim_dt yang pakai fixed seed)
  * karena coverage adalah visualisasi area, bukan simulasi DT point-by-point.
+ * [ALIGN] Sekarang menerima scenKey untuk memilih grid decorrelation
+ * distance yang sesuai skenario (bukan grid tetap untuk semua kondisi).
  */
-function spatialNoise(lat,lng,std,siteId){
-  let seed=0;for(let i=0;i<siteId.length;i++)seed=(seed*17+siteId.charCodeAt(i))&0xffff;
-  const cLat=Math.round(lat/SPATIAL_GRID_SIZE),cLng=Math.round(lng/SPATIAL_GRID_SIZE);
-  const s1=hashInt(cLat*73856093^cLng*19349663^seed),s2=hashInt(s1+2654435761);
+/**
+ * [FIX-9] Ganti dari HARD NEAREST-BUCKET → INTERPOLASI BILINEAR + smoothstep.
+ *
+ * Root cause "noise kayak statis TV/salt-pepper": versi lama pakai
+ * Math.round(lat/gridSize) — begitu titik geser dan lompat ke bucket
+ * sebelah, nilai noise LOMPAT TOTAL (independen), bukan menyambung. Kalau
+ * ukuran cell render (gridSize input user / hasil auto-coarsen PERF-2)
+ * berada di skala yang mirip dengan D_COR (decorrelation distance,
+ * 37-120m), efeknya HAMPIR SETIAP cell dapet noise acak sendiri-sendiri
+ * → keliatan seperti statis TV, bukan blob/patch halus seperti coverage
+ * map asli (bandingkan referensi OpenSignal/nPerf yang jauh lebih smooth).
+ *
+ * Fix: hitung noise Gaussian di 4 titik sudut bucket terdekat (bukan cuma
+ * 1 titik terdekat), lalu interpolasi bilinear+smoothstep di antaranya.
+ * Hasilnya: transisi menyambung mulus sepanjang ruang, blob shadow-fading
+ * berukuran ~D_COR seperti seharusnya secara fisik — bukan noise
+ * per-pixel acak. Statistik tetap sama (Box-Muller + clamp ±2σ), cuma
+ * caranya "disebar" antar titik yang berubah.
+ */
+function cornerGaussian(cx,cy,seed){
+  const s1=hashInt(cx*73856093^cy*19349663^seed),s2=hashInt(s1+2654435761);
   const u1=(s1>>>0)/4294967296+1e-10,u2=(s2>>>0)/4294967296+1e-10;
-  const raw=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2)*std;
-  // [FIX-2] Clamp ±2σ — inline dengan simulation_dt.js
+  return Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2);
+}
+function smoothStep(t){ return t*t*(3-2*t); }
+
+function spatialNoise(lat,lng,std,siteId,scenKey){
+  let seed=0;for(let i=0;i<siteId.length;i++)seed=(seed*17+siteId.charCodeAt(i))&0xffff;
+  const gridSize=D_COR_DEG[scenKey]||D_COR_DEFAULT;
+
+  const fx=lat/gridSize, fy=lng/gridSize;
+  const ix=Math.floor(fx), iy=Math.floor(fy);
+  const tx=smoothStep(fx-ix), ty=smoothStep(fy-iy);
+
+  const n00=cornerGaussian(ix,   iy,   seed);
+  const n10=cornerGaussian(ix+1, iy,   seed);
+  const n01=cornerGaussian(ix,   iy+1, seed);
+  const n11=cornerGaussian(ix+1, iy+1, seed);
+
+  const nx0 = n00*(1-tx) + n10*tx;
+  const nx1 = n01*(1-tx) + n11*tx;
+  const raw = (nx0*(1-ty) + nx1*ty) * std;
+
+  // [FIX-2] Clamp ±2σ tetap dipertahankan — inline dengan simulation_dt.js
   return Math.max(-2*std, Math.min(2*std, raw));
 }
 
 // ── RSRP ──────────────────────────────────────────────────────────────────────
+// [ALIGN] Formula disamakan persis dengan dtsimulation.js:
+// RSRP = TX + G_E,max - CableLoss + G_h(θ) - PL - Lc + xi
+// Sebelumnya G_E,max dan CableLoss tidak disertakan sama sekali, menyebabkan
+// RSRP under-estimate ~7.5 dB dibanding dtsimulation.js untuk param RF yang sama.
 function computeRSRP(dist,gainDb,hBS,sc,cond,lat,lon,siteId,clutter,P){
   const pl=pathLoss(sc,cond,dist,P.FREQUENCY,hBS,MOBILE_H);
   const cl=getClutterLoss(clutter);
-  const xi=spatialNoise(lat,lon,getShadowStd(sc,cond),siteId);
-  return P.TX_POWER+gainDb-pl-cl+xi;
+  const scenKey=`${sc}_${cond}`;
+  const xi=spatialNoise(lat,lon,getShadowStd(sc,cond),siteId,scenKey);
+  return P.TX_POWER+P.ANTENNA_GAIN-P.CABLE_LOSS+gainDb-pl-cl+xi;
+}
+
+/**
+ * [FIX-13] Varian DETERMINISTIK — sama persis dengan computeRSRP() tapi
+ * TANPA suku shadow fading (xi). Dipakai KHUSUS untuk matrix visual/kontur.
+ *
+ * Alasan: tool RF planning nyata (Atoll, dsb) menampilkan prediksi RSRP
+ * sebagai nilai deterministik (jarak + pola antena sektor + path loss +
+ * clutter loss) — shadow fading di tool tersebut dipakai untuk perhitungan
+ * probabilitas terpisah ("cell edge coverage probability"), BUKAN dirender
+ * sebagai variasi warna acak per piksel. Itulah sebabnya plot Atoll terlihat
+ * rapi & pola "kelopak" per sektor jelas — bukan soal grid/heatmap/kontur,
+ * tapi soal APA yang digambar.
+ *
+ * `grids[]` (dipakai detectGaps/statistik/klik-detail) TETAP pakai
+ * computeRSRP() dengan shadow fading seperti sebelumnya — tidak diubah,
+ * supaya penilaian gap/blank-spot tetap mempertimbangkan variasi realistis.
+ * Yang berubah HANYA matrix yang dipakai untuk kontur visual.
+ */
+function computeRSRPDeterministic(dist,gainDb,hBS,sc,cond,clutter,P){
+  const pl=pathLoss(sc,cond,dist,P.FREQUENCY,hBS,MOBILE_H);
+  const cl=getClutterLoss(clutter);
+  return P.TX_POWER+P.ANTENNA_GAIN-P.CABLE_LOSS+gainDb-pl-cl;
 }
 
 /**
@@ -242,6 +376,11 @@ function getSINRCategory(v){if(v>=20)return'S1';if(v>=10)return'S2';if(v>=0)retu
 function getCategoryName(c){return{S1:'Excellent',S2:'Good',S3:'Moderate',S4:'Poor',S5:'Bad',S6:'Very Bad'}[c]||'Unknown';}
 
 // ── Organic shape ─────────────────────────────────────────────────────────────
+// [ALIGN2] Fungsi-fungsi di bawah ini TIDAK LAGI dipakai untuk menentukan
+// bentuk coverage (lihat calcCoverage — sekarang berbasis ambang RSRP riil,
+// bukan radius+noise organik). Dipertahankan (tidak dihapus) untuk berjaga
+// kalau ada bagian lain yang masih bergantung padanya, tapi tidak lagi
+// berperan aktif di alur utama generateCoverage/calcCoverage.
 function smoothHash(x,y,seed){seed=seed||0;const n=Math.sin(x*127.1+y*311.7+seed*74.3)*43758.5453;return n-Math.floor(n);}
 function smoothNoise2D(x,y,seed){const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy);return smoothHash(ix,iy,seed)*(1-ux)*(1-uy)+smoothHash(ix+1,iy,seed)*ux*(1-uy)+smoothHash(ix,iy+1,seed)*(1-ux)*uy+smoothHash(ix+1,iy+1,seed)*ux*uy;}
 function fractalNoise2D(x,y,octaves,seed){let v=0,a=0.5,f=1,m=0;for(let o=0;o<octaves;o++){v+=a*(smoothNoise2D(x*f,y*f,seed+o*31)-0.5);m+=a;a*=0.5;f*=2;}return v/m;}
@@ -379,7 +518,9 @@ function clearSiteData(){
   siteIndex={};
   siteLayer.clearLayers();sectorLayer.clearLayers();
   if(coverageLayer){map.removeLayer(coverageLayer);coverageLayer=null;}
+  if(_coverageClickHandler){map.off('click',_coverageClickHandler);_coverageClickHandler=null;}
   clearGapLayer();populateSiteSearch();showUploadPrompt();
+  removeBlankSpotNotification();
   const lg=document.getElementById('mapLegend');if(lg)lg.style.display='none';
   const ar=document.getElementById('analysisResult');
   if(ar)ar.innerHTML='<div class="waiting-state"><i class="fas fa-info-circle"></i><p>Pilih site untuk melihat analisis</p></div>';
@@ -531,8 +672,8 @@ function generateCoverage(){
       const neighbours=getNeighbourSites(selectedSite);
       const allSites  =[{id:selectedSite,site:mainSite,isMain:true,siteColorIdx:0},...neighbours.map((n,i)=>({id:n.id,site:n.site,isMain:false,siteColorIdx:i+1}))];
       const P=getParams();
-      const grids=calcCoverage(allSites,gridSize,radius,antHeight,P);
-      renderCoverageGrid(grids,currentCoverageType);
+      const { grids, cellSizeM, gridMeta } = calcCoverage(allSites,gridSize,radius,antHeight,P);
+      renderCoverageGrid(grids,currentCoverageType,gridMeta);
 
       siteLayer.remove();
       siteLayer.addTo(map);
@@ -540,10 +681,19 @@ function generateCoverage(){
       sectorLayer.addTo(map);
 
       window._lastCoverageGrids=grids;
+      window._lastCellSizeM=cellSizeM; // [PERF-2] dipakai goToPlanning/sendCoverageToCompare supaya metadata konsisten dengan grid sebenarnya
       showSendToCompareBtn();
-      const gaps=detectGaps(grids,allSites,gridSize);
+      const gaps=detectGaps(grids,allSites,cellSizeM);
+      // [GAP-Z] renderGapLayer WAJIB dipanggil SETELAH renderCoverageGrid —
+      // gapLayer selalu di-addTo(map) belakangan sehingga z-index-nya di
+      // ATAS coverageLayer (grid). detectGaps() membaca g.rsrpValue MENTAH
+      // dari grids[] (bukan warna/kategori cell), dan grids[] itu SENDIRI
+      // tidak difilter oleh cutoff render di renderCoverageGrid (cutoff
+      // di situ cuma menentukan digambar/tidak, bukan menghapus data) —
+      // jadi akurasi deteksi blank-spot/weak-coverage tetap presisi 100%.
       renderGapLayer(gaps,allSites);
-      updateStats(grids,antHeight,allSites,gaps,P);
+      showBlankSpotNotification(gaps);
+      updateStats(grids,antHeight,allSites,gaps,P,cellSizeM);
       hideLoading();
     }catch(err){console.error(err);alert('Error: '+err.message);hideLoading();}
   },400);
@@ -552,35 +702,132 @@ function generateCoverage(){
 function calcCoverage(allSites,gridSize,radius,antHeight,P){
   const mainSite=allSites[0].site;
   const mpdLat=111320,mpdLon=111320*Math.cos(mainSite.lat*Math.PI/180);
-  const dLat=gridSize/mpdLat,dLon=gridSize/mpdLon;
   const allLats=allSites.map(s=>s.site.lat),allLngs=allSites.map(s=>s.site.lng);
-  const minLat=Math.min(...allLats)-radius/mpdLat,maxLat=Math.max(...allLats)+radius/mpdLat;
-  const minLon=Math.min(...allLngs)-radius/mpdLon,maxLon=Math.max(...allLngs)+radius/mpdLon;
+
+  // [ALIGN3] Bounding box pencarian dihitung dari FISIKA, bukan cuma angka
+  // 'radius' manual. Kita hitung jarak boresight (arah terkuat) sampai
+  // sinyal benar-benar menembus ambang terlemah (-145 dBm, sedikit di
+  // bawah bin terlemah legend -140~-120), lalu pakai jarak itu (atau
+  // 'radius' input user, mana yang lebih besar) sebagai luas pencarian.
+  // [FIX-11] MAX_AUTO_RADIUS_M dinaikkan lagi 2000m → 5000m. Alasan
+  // sebelumnya (PERF-1) diturunkan ke 2000m adalah supaya browser gak
+  // macet render RIBUAN L.polygon per cell. Sekarang rendering utama
+  // sudah CONTOUR (segelintir polygon per band, bukan per-cell), jadi
+  // risiko itu sudah jauh berkurang — batas sekarang lebih ke soal waktu
+  // KOMPUTASI (loop RSRP per site per cell) dan itu tetap dijaga aman oleh
+  // PERF-2 (auto-coarsen grid, lihat MAX_CELLS di bawah).
+  //
+  // Kenapa ini penting: dengan cluster site yang rapat (banyak overlap),
+  // gabungan sinyal dari 7 site bisa saja masih "hidup" (> RSRP_BLANK)
+  // sampai ke tepi 2000m — sehingga kontur yang dihasilkan SELALU terlihat
+  // memenuhi kotak pencarian, bukan karena bug, tapi karena area yang
+  // dihitung belum cukup luas untuk sampai ke titik sinyal BENAR-BENAR
+  // habis (bandingkan referensi Atoll: falloff kelihatan karena area yang
+  // di-plot jauh lebih luas dari jangkauan gabungan site). Dengan radius
+  // lebih luas, falloff natural (dan potensi blank spot beneran, kalau
+  // ada) akan ikut ter-render, bukan terpotong batas komputasi.
+  //
+  // [SCOPE] Catatan penting: pencarian TETAP dibatasi ke bounding box
+  // main site + hingga 6 neighbour (allSites) — bukan seluruh peta.
+  // "Coverage tanpa batas warna/bentuk" di sini artinya bentuk akhirnya
+  // organik (tidak dipaksa lingkaran/kotak), BUKAN berarti area
+  // perhitungannya jadi tak terbatas — cakupan komputasi tetap terkontrol
+  // sesuai cluster site yang sedang dipilih & parameter fisika mereka.
+  // [FIX-14] BUG: sebelumnya searchRadius = Math.max(radius, physicsMaxDist)
+  // — ini bikin radius yang lo SET DI UI TERABAIKAN kalau physicsMaxDist
+  // (jarak ke ambang -145dBm, sengaja dibikin generous) lebih besar dari
+  // radius input. Akibatnya set 500m tetap jadi luas beberapa km kalau TX
+  // power/antenna gain cukup besar. Radius dari input UI sekarang jadi
+  // KONTROL UTAMA (sesuai ekspektasi user) — physics cuma nambah MARGIN
+  // KECIL (20%) di luar radius biar tepi kontur sempat fade natural,
+  // bukan terpotong tegas persis di angka radius, dan TIDAK PERNAH
+  // membesarkan area jauh melebihi yang diminta.
+  const MAX_AUTO_RADIUS_M = 5000; // batas pengaman mutlak, jarang tersentuh sekarang
+  const eirpBoresight = P.TX_POWER + P.ANTENNA_GAIN - P.CABLE_LOSS;
+  const physicsMaxDist = solveMaxDistanceForThreshold(
+    P.SCENARIO, P.CONDITION, P.FREQUENCY, antHeight, MOBILE_H, eirpBoresight, -145
+  );
+  // [FIX-15] Margin dinaikkan 1.2 → 1.6 (selaras dengan newsite.js) supaya
+  // radius yang lo MINTA di UI tetap tampil full-strength, taper (lihat
+  // FIX-15 di calcCoverage bagian bawah) baru mulai di ring buffer setelah
+  // radius itu, bukan memakan area yang diminta.
+  const FADE_MARGIN_FACTOR = 1.6;
+  const searchRadius = Math.min(radius * FADE_MARGIN_FACTOR, MAX_AUTO_RADIUS_M);
+  if (physicsMaxDist > searchRadius) {
+    console.warn(`[calcCoverage] Radius input (${radius}m) lebih kecil dari jarak fisik ke ambang terlemah (~${Math.round(physicsMaxDist)}m) — beberapa titik di tepi bin terlemah legend mungkin belum sepenuhnya tercapai dalam radius ini. Perbesar radius kalau ingin melihat sebaran penuh sampai sinyal benar-benar habis.`);
+  }
+
+  const minLat=Math.min(...allLats)-searchRadius/mpdLat,maxLat=Math.max(...allLats)+searchRadius/mpdLat;
+  const minLon=Math.min(...allLngs)-searchRadius/mpdLon,maxLon=Math.max(...allLngs)+searchRadius/mpdLon;
+
+  // [PERF-2] Auto-coarsen grid: perkirakan dulu jumlah sel yang akan
+  // dihitung dengan gridSize pilihan user. Kalau melebihi MAX_CELLS,
+  // perbesar ukuran sel (dalam meter) secukupnya supaya total sel tetap
+  // di bawah batas aman — mencegah browser macet tanpa membatalkan
+  // perhitungan sama sekali. gridSize asli TIDAK PERNAH diperkecil
+  // otomatis (hanya diperbesar/coarsen kalau memang perlu).
+  // [FIX-11] Dinaikkan 20.000 → 45.000 sejalan dengan MAX_AUTO_RADIUS_M.
+  // Batas lama itu dirancang waktu rendering masih 1 L.polygon per cell
+  // (ribuan elemen DOM Leaflet = berat). Sekarang rendering utama pakai
+  // CONTOUR (segelintir polygon per band threshold, bukan per-cell), jadi
+  // beban render sudah jauh lebih ringan — sisa beban cuma di loop hitung
+  // RSRP per site per cell (JS murni, jauh lebih murah daripada DOM).
+  const MAX_CELLS = 45000;
+  const areaWidthM  = (maxLon - minLon) * mpdLon;
+  const areaHeightM = (maxLat - minLat) * mpdLat;
+  const estCells = (areaWidthM / gridSize) * (areaHeightM / gridSize);
+  let cellSizeM = gridSize;
+  if (estCells > MAX_CELLS) {
+    cellSizeM = Math.sqrt((areaWidthM * areaHeightM) / MAX_CELLS);
+    console.warn(`[calcCoverage] Estimasi ${Math.round(estCells)} sel melebihi batas aman (${MAX_CELLS}) — grid otomatis diperkasar dari ${gridSize}m ke ~${Math.round(cellSizeM)}m untuk menjaga performa.`);
+  }
+  const dLat=cellSizeM/mpdLat, dLon=cellSizeM/mpdLon;
+
+  // [CONTOUR] Loop berbasis INDEX INTEGER (bukan akumulasi float lat+=dLat)
+  // supaya jumlah baris/kolom matrix PERSIS konsisten (tidak ada drift
+  // pembulatan floating point yang bisa bikin matrix miss-align dengan
+  // grids[]). numRows/numCols ini juga yang dipakai d3-contour untuk tau
+  // bentuk (lebar x tinggi) data scalar field-nya.
+  const numRows = Math.floor((maxLat-minLat)/dLat + 1e-9) + 1;
+  const numCols = Math.floor((maxLon-minLon)/dLon + 1e-9) + 1;
+
   const grids=[];
+  // [CONTOUR] Matrix paralel row-major (ri*numCols+ci), dipakai d3.contours().
+  // Diisi bersamaan dengan grids[] supaya SATU sumber perhitungan fisika,
+  // tidak ada duplikasi/inkonsistensi antara data untuk statistik (grids[])
+  // dan data untuk visual (matrix).
+  const rsrpMatrix = new Float64Array(numRows*numCols);
+  const sinrMatrix = new Float64Array(numRows*numCols);
 
-  for(let lat=minLat;lat<=maxLat;lat+=dLat){
-    for(let lon=minLon;lon<=maxLon;lon+=dLon){
-      let cov=false;
-      for(const{id,site}of allSites){
-        const dist=calcDistance({lat:site.lat,lng:site.lng},{lat,lng:lon});
-        const brng=bearingTo(site.lat,site.lng,lat,lon);
-        if(smoothHash(lat*9973,lon*9973,id.length*17)<getEdgeSurvivalProb(dist,radius,brng,id)){cov=true;break;}
-      }
-      if(!cov)continue;
-
+  for(let ri=0; ri<numRows; ri++){
+    const lat = minLat + ri*dLat;
+    for(let ci=0; ci<numCols; ci++){
+      const lon = minLon + ci*dLon;
+      // [ALIGN3] TIDAK ADA LAGI pembatas jarak melingkar di sini. Setiap
+      // titik dalam bounding box (yang sudah dihitung cukup luas dari
+      // fisika di atas) dihitung apa adanya — bentuk akhir yang muncul
+      // murni dari kombinasi pola antena tiap sektor + path loss + clutter
+      // riil, bukan dipotong paksa jadi lingkaran.
       const siteRSRPs=allSites.map(({id,site,isMain})=>{
         const dist=calcDistance({lat:site.lat,lng:site.lng},{lat,lng:lon});
-        if(dist<1)return{id,rsrp:P.TX_POWER,dist,sectorIdx:0,isMain,scenario:P.SCENARIO,condition:P.CONDITION};
+        if(dist<1)return{id,rsrp:P.TX_POWER,gainDb:0,dist,sectorIdx:0,isMain,scenario:P.SCENARIO,condition:P.CONDITION};
         const brng=bearingTo(site.lat,site.lng,lat,lon);
         let gainDb=0,sectorIdx=0;
         if(site.sectors?.length){const b=bestSectorGain(brng,site.sectors,P.BEAMWIDTH,P.ANTENNA_Am);gainDb=b.gain;sectorIdx=b.sectorIdx;}
         const rsrp=computeRSRP(dist,gainDb,antHeight,P.SCENARIO,P.CONDITION,lat,lon,id,P.CLUTTER,P);
-        return{id,rsrp,dist,sectorIdx,isMain,scenario:P.SCENARIO,condition:P.CONDITION};
+        return{id,rsrp,gainDb,dist,sectorIdx,isMain,scenario:P.SCENARIO,condition:P.CONDITION};
       });
 
       let best=siteRSRPs[0];
       siteRSRPs.forEach(s=>{if(s.rsrp>best.rsrp)best=s;});
-      if(calcDistance({lat:mainSite.lat,lng:mainSite.lng},{lat,lng:lon})>radius*2.2)continue;
+
+      // [ALIGN3] TIDAK ADA LAGI pemotongan berdasar ambang RSRP di sini.
+      // Semua titik dalam bounding box tetap ditampilkan APA ADANYA
+      // (termasuk yang sangat lemah, jatuh ke kategori S5/S6/merah tua) —
+      // ini sesuai desain legend asli yang memang mencakup bin -140~-120.
+      // Klasifikasi "blank spot" tetap ditangani terpisah oleh
+      // detectGaps() (yang punya definisi & tujuan analisis sendiri),
+      // bukan dengan menyembunyikan titik lemah dari visualisasi utama.
 
       const rsrpServing=Math.max(RX_SENSITIVITY_FLOOR,best.rsrp);
       // [FIX-4] interfRSRPs diteruskan ke computeSINR yang sudah ada filter
@@ -604,28 +851,283 @@ function calcCoverage(allSites,gridSize,radius,antHeight,P){
         allRSRPs:siteRSRPs.map(s=>({id:s.id,rsrp:Math.round(Math.max(RX_SENSITIVITY_FLOOR,s.rsrp)*10)/10})),
         bounds:[[lat,lon],[lat+dLat,lon],[lat+dLat,lon+dLon],[lat,lon+dLon]],
       });
+
+      // [FIX-13] Nilai DETERMINISTIK (tanpa shadow fading) khusus untuk
+      // matrix visual/kontur. Serving site TETAP mengikuti keputusan
+      // kompetisi multi-site yang sama (best.id, dari nilai ber-noise) —
+      // supaya "site mana yang melayani titik ini" tetap satu sumber
+      // kebenaran dengan grids[]/handover-zone. Yang dibersihkan dari
+      // noise HANYA besaran (magnitude) RSRP/SINR yang digambar.
+      const rsrpDetRaw = computeRSRPDeterministic(best.dist, best.gainDb, antHeight, P.SCENARIO, P.CONDITION, P.CLUTTER, P);
+      const rsrpServingDet = Math.max(RX_SENSITIVITY_FLOOR, rsrpDetRaw);
+      const interfRSRPsDet = siteRSRPs.filter(s=>s.id!==best.id).map(s=>
+        Math.max(RX_SENSITIVITY_FLOOR, computeRSRPDeterministic(s.dist, s.gainDb, antHeight, P.SCENARIO, P.CONDITION, P.CLUTTER, P))
+      );
+      const sinrValDet = computeSINR(rsrpServingDet, interfRSRPsDet, P);
+
+      const mi = ri*numCols+ci;
+
+      // [FIX-15] EDGE TAPER — murni kosmetik, HANYA untuk matrix visual
+      // (rsrpMatrix/sinrMatrix), TIDAK menyentuh grids[]/detectGaps()/
+      // statistik sama sekali. Sama konsep dengan newsite.js: box pencarian
+      // itu PERSEGI (jarak searchRadius sama ke 4 sisi dari bounding box
+      // cluster), sementara pola sinyal gabungan multi-site + multi-sektor
+      // itu gak seragam ke segala arah — di "lembah" antar sektor (atau di
+      // titik yang dekat ke site paling pinggir cluster), sinyal cuma
+      // diredam sampai Am, bukan nol, jadi bisa "hidup" tepat sampai SISI
+      // kotak (titik terdekat), walau di SUDUT kotak (lebih jauh) sudah
+      // pudar duluan. Fix: makin dekat ke sisi kotak MANAPUN, makin
+      // diredam paksa — dijamin habis sebelum tepi dari arah manapun.
+      const distToEdgeM = Math.min(
+        (lat - minLat) * mpdLat, (maxLat - lat) * mpdLat,
+        (lon - minLon) * mpdLon, (maxLon - lon) * mpdLon
+      );
+      const taperZoneM = searchRadius * 0.35; // 35% terluar mulai diredam
+      const taperT = Math.max(0, Math.min(1, 1 - distToEdgeM / taperZoneM));
+      const taperSmooth = taperT * taperT * (3 - 2 * taperT); // smoothstep
+      const taperDb = taperSmooth * 45; // sampai -45dB tepat di tepi kotak
+
+      // [FIX-16] Sinkronkan definisi "blank" antara VISUAL kontur dan
+      // ANALISIS detectGaps(): sebelumnya rsrpMatrix (kontur) murni pakai
+      // nilai deterministik, sehingga titik yang secara nilai BER-NOISE
+      // (grids[].rsrpValue) sudah dianggap blank oleh detectGaps() —
+      // bisa saja tetap tampil "biru/aman" di kontur (karena deterministik
+      // membuang noise negatif yang bikin titik itu jatuh di bawah ambang).
+      // Akibatnya: notifikasi/marker 🚫 tetap benar muncul di titik itu,
+      // TAPI visual kontur gak nunjukin lubang di lokasi yang sama —
+      // membingungkan karena dua sumber (visual vs analitik) kelihatan
+      // gak sinkron. Sekarang: kalau grids[] (rsrpServing, ber-noise) SUDAH
+      // dianggap blank, paksa rsrpMatrix ikut jadi sangat rendah juga
+      // (bikin lubang di kontur persis di situ) — di luar titik itu, tetap
+      // pakai nilai deterministik seperti biasa (petal tetap mulus).
+      rsrpMatrix[mi] = rsrpServing < GAP_CFG.RSRP_BLANK
+        ? (GAP_CFG.RSRP_BLANK - 15) // pasti di bawah band kontur terlemah manapun
+        : (rsrpServingDet - taperDb);
+      // [BLANK-UNIFIED] Keputusan "area ini blank atau tidak" TETAP pakai
+      // rsrpServing (nilai ber-noise, sama seperti detectGaps()) — satu
+      // sumber kebenaran untuk "coverage exist". Hanya BESARAN SINR yang
+      // ditampilkan (kalau area lolos) yang dibersihkan dari noise dan
+      // kena taper yang sama biar kontur SINR juga fade konsisten di tepi.
+      sinrMatrix[mi] = rsrpServing < GAP_CFG.RSRP_BLANK ? (P.SINR_FLOOR-1) : (sinrValDet - taperSmooth*20);
     }
   }
-  console.log(`[v6.6] ${grids.length} cells | h=${antHeight}m | ${P.SCENARIO.toUpperCase()} ${P.CONDITION.toUpperCase()} | ${P.FREQUENCY}MHz ${P.BANDWIDTH}MHz BW | TX ${P.TX_POWER}dBm | ${P.CLUTTER} | DomIntf±${DOMINANT_INTERFERER_THRESHOLD_DB}dB`);
-  return grids;
+  console.log(`[v10.3] ${grids.length} cells (${numRows}x${numCols}, cellSize=${Math.round(cellSizeM)}m, searchRadius=${Math.round(searchRadius)}m) | h=${antHeight}m | ${P.SCENARIO.toUpperCase()} ${P.CONDITION.toUpperCase()} | ${P.FREQUENCY}MHz ${P.BANDWIDTH}MHz BW | TX ${P.TX_POWER}dBm | ${P.CLUTTER} | DomIntf±${DOMINANT_INTERFERER_THRESHOLD_DB}dB`);
+  return {
+    grids, cellSizeM,
+    gridMeta: { numRows, numCols, minLat, minLon, dLat, dLon, rsrpMatrix, sinrMatrix }
+  };
 }
 
-function renderCoverageGrid(grids,type){
-  const lg=L.layerGroup(),unit=type==='rsrp'?'dBm':'dB';
-  grids.forEach(g=>{
-    const ml=`${g.scenario.toUpperCase()} ${g.condition.toUpperCase().replace('_','/')}`;
-    const bCol=g.isVoronoiBorder?SITE_BORDER_COLORS[g.siteColorIdx]:g.color,bW=g.isVoronoiBorder?1.2:0;
-    const rows=g.allRSRPs.sort((a,b)=>b.rsrp-a.rsrp).map(s=>{const sv=s.id===g.servingSiteId;return`<tr style="${sv?'font-weight:bold;color:#00c7be':'color:#aaa'}"><td>${sv?'▶':'&nbsp;'} ${s.id}</td><td>${s.rsrp} dBm</td></tr>`;}).join('');
-    L.polygon(g.bounds,{color:bCol,fillColor:g.color,fillOpacity:0.72,weight:bW,opacity:bW?0.85:0})
-      .bindPopup(`<div style="font-family:Arial,sans-serif;min-width:190px"><h4 style="margin:0 0 6px;color:${g.color}">${type.toUpperCase()}: ${g.value} ${unit}</h4><p style="margin:2px 0"><b>Category:</b> ${getCategoryName(g.category)}</p><p style="margin:2px 0"><b>Serving:</b> <span style="color:#00c7be">${g.servingSiteId}</span>${g.isMain?' ★':''}</p><p style="margin:2px 0"><b>Dist:</b> ${Math.round(g.dist)} m | <b>Model:</b> ${ml}</p><p style="margin:2px 0"><b>RSRP:</b> ${g.rsrpValue} dBm | <b>SINR:</b> ${g.sinrValue.toFixed(1)} dB</p><hr style="border-color:#eee;margin:6px 0"><table style="font-size:0.78rem;width:100%">${rows}</table>${g.isVoronoiBorder?'<p style="font-size:0.72rem;color:#f0b429;margin:4px 0 0">⚡ Zona handover</p>':''}</div>`)
-      .addTo(lg);
+// ══════════════════════════════════════════════════════════════════════════
+// [CONTOUR v9 — ISOBAND] Visualisasi coverage pakai CONTOUR/ISOBAND (marching
+// squares via d3-contour, lisensi BSD-3-Clause — bukan MarchingSquares.js yang
+// AGPL-3.0, supaya aman dipakai komersial). Ini opsi ke-3 dari 3 yang dibahas
+// (grid kotak / heatmap blur / contour) — dipilih karena satu-satunya yang
+// sekaligus (a) bentuknya organik murni dari data asli (bukan ditebak/blur),
+// (b) presisi datanya gak hilang, dan (c) blank spot muncul otomatis sebagai
+// LUBANG di dalam kontur — gak perlu hack cutoff manual kayak sebelumnya.
+//
+// PENTING: butuh <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+// ditambahkan di HTML SEBELUM <script src="coverage.js">. Kalau d3 belum ada,
+// otomatis fallback ke grid per-cell (v8.1) — halaman tetap jalan, cuma
+// visualnya balik kotak-kotak sampai script d3 ditambahkan.
+//
+// CARA KERJA (painter's algorithm, bukan boolean subtract):
+// d3.contours() menghitung "semua area dengan value ≥ threshold" (termasuk
+// lubang di dalamnya kalau ada area lemah di tengah area kuat). Kalau kita
+// gambar dari threshold TERLEMAH (base, warna S4) → makin KUAT (S1) secara
+// berurutan, tiap layer yang lebih kuat otomatis LEBIH KECIL & digambar DI
+// ATAS layer sebelumnya (Leaflet: layer yang ditambah belakangan tampil di
+// atas) — hasil visualnya persis isoband, tanpa perlu hitung selisih polygon
+// secara eksplisit.
+//
+// [BLANK-UNIFIED] Base layer (threshold TERLEMAH) = GAP_CFG.RSRP_BLANK
+// persis. Area di bawah itu TIDAK PERNAH digambar sama sekali (bukan hole
+// buatan, tapi memang gak masuk kriteria threshold manapun) — jadi definisi
+// "coverage exist" tetap SATU SUMBER, sama persis dengan yang dipakai
+// detectGaps(). Kalau di tengah cluster ada titik yang secara fisik gak
+// tercover site manapun (RSRP semua site < -120 di situ), d3.contours()
+// otomatis menghasilkan LUBANG geometris di kontur — itulah "blank spot"
+// yang muncul natural di tengah, sesuai yang lo maksud.
+// ══════════════════════════════════════════════════════════════════════════
+
+// [FIX-12] Anchor kategori tetap sama persis dengan legend (S1-S5) — supaya
+// statistik/legend/persentase yang ditampilkan tetap konsisten dengan warna
+// yang dilihat. TAPI untuk kontur, anchor ini "dipecah" jadi banyak
+// sub-threshold (tiap STEP_DB) dengan warna hasil interpolasi linear antar
+// anchor — inilah yang bikin gradasi terlihat halus & granular gaya Atoll
+// (bukan cuma 4-5 blok besar), sekaligus memperjelas "benturan" sinyal antar
+// sektor/site karena transisi kekuatan sinyal jadi lebih presisi divisualkan.
+const CONTOUR_ANCHORS = {
+  rsrp: [
+    { min: GAP_CFG.RSRP_BLANK, color: '#fffb00' }, // S4 basis (di bawah ini = blank, tidak digambar)
+    { min: -105,               color: '#70ff66' }, // S3
+    { min: -95,                color: '#00a955' }, // S2
+    { min: -85,                color: '#0042a5' }, // S1
+    { min: -75,                color: '#00286b' }, // ekor atas S1 (super kuat, dekat site) — sedikit lebih gelap
+  ],
+  sinr: [
+    { min: -10, color: '#ff3333' }, // S5 basis
+    { min: -5,  color: '#fffb00' }, // S4
+    { min: 0,   color: '#70ff66' }, // S3
+    { min: 10,  color: '#00a955' }, // S2
+    { min: 20,  color: '#0042a5' }, // S1
+    { min: 30,  color: '#00286b' },
+  ],
+};
+const STEP_DB = 3; // resolusi sub-threshold — makin kecil, makin halus gradasinya
+
+function hexToRgb(hex){ const n=parseInt(hex.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function rgbToHex([r,g,b]){ return '#'+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,'0')).join(''); }
+function lerpColor(c1,c2,t){ const a=hexToRgb(c1),b=hexToRgb(c2); return rgbToHex(a.map((v,i)=>v+(b[i]-v)*t)); }
+
+function buildFineThresholds(type){
+  const anchors = CONTOUR_ANCHORS[type];
+  const out = [];
+  for(let i=0;i<anchors.length-1;i++){
+    const a=anchors[i], b=anchors[i+1];
+    const span = b.min - a.min;
+    const steps = Math.max(1, Math.round(span/STEP_DB));
+    for(let s=0;s<steps;s++){
+      const t = s/steps;
+      out.push({ min: a.min + span*t, color: lerpColor(a.color, b.color, t) });
+    }
+  }
+  out.push(anchors[anchors.length-1]);
+  return out; // ascending, terlemah → terkuat
+}
+const CONTOUR_THRESHOLDS = { rsrp: buildFineThresholds('rsrp'), sinr: buildFineThresholds('sinr') };
+
+let _coverageClickHandler = null; // dipakai untuk lepas-pasang listener klik detail-titik
+
+function renderCoverageGrid(grids, type, gridMeta){
+  if (coverageLayer) { map.removeLayer(coverageLayer); coverageLayer = null; }
+  if (_coverageClickHandler) { map.off('click', _coverageClickHandler); _coverageClickHandler = null; }
+  if (!grids.length) return;
+
+  if (typeof d3 === 'undefined' || !d3.contours || !gridMeta) {
+    console.warn('[CONTOUR] d3-contour tidak terdeteksi — fallback ke grid per-cell. Tambahkan <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"> sebelum coverage.js untuk mengaktifkan contour.');
+    return renderCoverageGridFallback(grids, type);
+  }
+
+  const { numRows, numCols, minLat, minLon, dLat, dLon, rsrpMatrix, sinrMatrix } = gridMeta;
+  const matrix = type==='rsrp' ? rsrpMatrix : sinrMatrix;
+  const bands  = CONTOUR_THRESHOLDS[type];
+
+  // d3.contours bekerja di ruang index (x=kolom 0..numCols-1, y=baris 0..numRows-1).
+  // Konversi balik ke lat/lon pakai posisi grid asli.
+  function idxToLatLng([x,y]){ return [minLat + y*dLat, minLon + x*dLon]; }
+  function polygonToLatLngRings(polygon){ return polygon.map(ring => ring.map(idxToLatLng)); }
+
+  const contourGen = d3.contours().size([numCols, numRows]);
+  const lg = L.layerGroup();
+  let _polyCount = 0;
+
+  bands.forEach(band => {
+    let multiPolygon;
+    try {
+      // [FIX-10] API d3-contour yang BENAR untuk single-threshold adalah
+      // contours.contour(values, threshold) — BUKAN .threshold(x)(values)
+      // (itu method yang gak ada). Kesalahan ini kemarin bikin semua band
+      // diam-diam gagal/kosong, sehingga tidak ada apa pun yang tergambar
+      // di peta walau grids[]/statistik tetap benar (dihitung terpisah).
+      multiPolygon = contourGen.contour(matrix, band.min); // GeoJSON MultiPolygon {type,coordinates,value}
+    } catch(e){ console.warn('[CONTOUR] gagal hitung threshold', band.min, e); return; }
+    if (!multiPolygon?.coordinates?.length) return;
+
+    multiPolygon.coordinates.forEach(polygonRings => {
+      const latlngRings = polygonToLatLngRings(polygonRings); // [outerRing, holeRing1, ...]
+      L.polygon(latlngRings, {
+        stroke: false, fillColor: band.color, fillOpacity: 0.68,
+      }).addTo(lg);
+      _polyCount++;
+    });
   });
-  coverageLayer=lg.addTo(map);
+
+  console.log(`[CONTOUR] ${_polyCount} polygon digambar dari ${bands.length} band threshold (${type})`);
+  coverageLayer = lg.addTo(map);
+
+  // [PROBE] Karena kontur adalah polygon besar (bukan per-cell lagi), detail
+  // presisi per-titik dikasih lewat klik peta: cari cell terdekat dari data
+  // MENTAH (grids[], tidak berubah sama sekali) lalu tampilkan popup — jadi
+  // presisi data TIDAK hilang, cuma cara aksesnya lewat klik, bukan hover
+  // per-kotak seperti grid.
+  _coverageClickHandler = function(e){
+    if (!window._lastCoverageGrids?.length) return;
+    const clat=e.latlng.lat, clon=e.latlng.lng;
+    let nearest=null, nd=Infinity;
+    for (const g of window._lastCoverageGrids){
+      const dd=(g.lat-clat)**2+(g.lon-clon)**2;
+      if (dd<nd){ nd=dd; nearest=g; }
+    }
+    if (!nearest) return;
+
+    // [FIX-19] BUG: pencarian "cell terdekat" di atas TIDAK PUNYA batas
+    // jarak maksimum — jadi klik di mana pun di peta (bahkan jauh di luar
+    // area yang benar-benar dihitung) selalu menemukan "cell terdekat" dan
+    // menampilkannya seolah itu nilai di titik yang diklik. Itu keliru:
+    // titik di luar area simulasi memang TIDAK PERNAH dihitung sama sekali.
+    // Fix: hitung jarak METER asli (bukan cuma selisih derajat) dari titik
+    // klik ke cell terdekat, dan tolak kalau jaraknya melebihi ~1.5x ukuran
+    // cell — itu artinya klik jatuh di luar grid yang dihitung, bukan
+    // representasi titik itu.
+    const distToNearestM = calcDistance({lat: nearest.lat, lng: nearest.lon}, {lat: clat, lng: clon});
+    const maxAllowedM = (window._lastCellSizeM || 50) * 1.5;
+    if (distToNearestM > maxAllowedM) {
+      L.popup({maxWidth:240})
+        .setLatLng(e.latlng)
+        .setContent(`<div style="font-family:Arial,sans-serif;font-size:12.5px;color:#888;text-align:center;padding:4px 2px;">📍 Di luar area simulasi<br><span style="font-size:11px;">Titik ini belum pernah dihitung</span></div>`)
+        .openOn(map);
+      return;
+    }
+
+    const unit = currentCoverageType==='rsrp' ? 'dBm' : 'dB';
+    const val  = currentCoverageType==='rsrp' ? nearest.rsrpValue : nearest.sinrValue;
+    const cat  = currentCoverageType==='rsrp' ? getRSRPCategory(nearest.rsrpValue) : getSINRCategory(nearest.sinrValue);
+    const ml   = `${nearest.scenario.toUpperCase()} ${nearest.condition.toUpperCase().replace('_','/')}`;
+    const rows = nearest.allRSRPs.slice().sort((a,b)=>b.rsrp-a.rsrp).map(s=>{
+      const sv = s.id===nearest.servingSiteId;
+      return `<tr style="${sv?'font-weight:bold;color:#00c7be':'color:#aaa'}"><td>${sv?'▶':'&nbsp;'} ${s.id}</td><td>${s.rsrp} dBm</td></tr>`;
+    }).join('');
+    L.popup({maxWidth:280})
+      .setLatLng(e.latlng)
+      .setContent(`<div style="font-family:Arial,sans-serif;min-width:190px"><h4 style="margin:0 0 6px;">${currentCoverageType.toUpperCase()}: ${val.toFixed(1)} ${unit}</h4><p style="margin:2px 0"><b>Category:</b> ${getCategoryName(cat)}</p><p style="margin:2px 0"><b>Serving:</b> <span style="color:#00c7be">${nearest.servingSiteId}</span>${nearest.isMain?' ★':''}</p><p style="margin:2px 0"><b>Dist:</b> ${Math.round(nearest.dist)} m | <b>Model:</b> ${ml}</p><p style="margin:2px 0"><b>RSRP:</b> ${nearest.rsrpValue} dBm | <b>SINR:</b> ${nearest.sinrValue.toFixed(1)} dB</p><hr style="border-color:#eee;margin:6px 0"><table style="font-size:0.78rem;width:100%">${rows}</table></div>`)
+      .openOn(map);
+  };
+  map.on('click', _coverageClickHandler);
+}
+
+// [FALLBACK] Grid per-cell v8.1 (dipertahankan) — dipakai otomatis kalau
+// script d3 belum di-include di HTML, supaya halaman tetap fungsional.
+function renderCoverageGridFallback(grids,type){
+  const lg = L.layerGroup();
+  const unit = type==='rsrp' ? 'dBm' : 'dB';
+
+  grids.forEach(g => {
+    if (g.rsrpValue < GAP_CFG.RSRP_BLANK) return; // [FIX-8] tetap sama: skip blank spot
+
+    const ml = `${g.scenario.toUpperCase()} ${g.condition.toUpperCase().replace('_','/')}`;
+    const bCol = g.isVoronoiBorder ? SITE_BORDER_COLORS[g.siteColorIdx] : g.color;
+    const bW   = g.isVoronoiBorder ? 1.2 : 0;
+    const rows = g.allRSRPs.slice().sort((a,b)=>b.rsrp-a.rsrp).map(s=>{
+      const sv = s.id===g.servingSiteId;
+      return `<tr style="${sv?'font-weight:bold;color:#00c7be':'color:#aaa'}"><td>${sv?'▶':'&nbsp;'} ${s.id}</td><td>${s.rsrp} dBm</td></tr>`;
+    }).join('');
+
+    L.polygon(g.bounds, {
+      color: bCol, fillColor: g.color, fillOpacity: 0.72,
+      weight: bW, opacity: bW ? 0.85 : 0,
+    })
+    .bindPopup(`<div style="font-family:Arial,sans-serif;min-width:190px"><h4 style="margin:0 0 6px;color:${g.color}">${type.toUpperCase()}: ${g.value} ${unit}</h4><p style="margin:2px 0"><b>Category:</b> ${getCategoryName(g.category)}</p><p style="margin:2px 0"><b>Serving:</b> <span style="color:#00c7be">${g.servingSiteId}</span>${g.isMain?' ★':''}</p><p style="margin:2px 0"><b>Dist:</b> ${Math.round(g.dist)} m | <b>Model:</b> ${ml}</p><p style="margin:2px 0"><b>RSRP:</b> ${g.rsrpValue} dBm | <b>SINR:</b> ${g.sinrValue.toFixed(1)} dB</p><hr style="border-color:#eee;margin:6px 0"><table style="font-size:0.78rem;width:100%">${rows}</table></div>`)
+    .addTo(lg);
+  });
+
+  coverageLayer = lg.addTo(map);
 }
 
 // ── Stats & legend ────────────────────────────────────────────────────────────
-function updateStats(grids,antHeight,allSites,gaps,P){
-  const gs=parseInt(document.getElementById('gridSize').value),cats={};
+function updateStats(grids,antHeight,allSites,gaps,P,cellSizeM){
+  const gs=cellSizeM||parseInt(document.getElementById('gridSize').value),cats={};
   grids.forEach(g=>{cats[g.category]=(cats[g.category]||0)+1;});
   const total=grids.length||1;
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
@@ -691,8 +1193,31 @@ function setActiveViz(type){
 }
 
 // ── Gap detector ──────────────────────────────────────────────────────────────
+// [GAP-INDEP] detectGaps() SEPENUHNYA independen dari cara heatmap
+// digambar. Fungsi ini membaca g.rsrpValue MENTAH (angka dBm hasil
+// computeRSRP), bukan g.color / g.category / hasil blur apapun. Jadi
+// walau visualisasi berubah total dari grid-kotak → heatmap halus,
+// akurasi deteksi blank-spot/weak-coverage di bawah ini TIDAK berubah
+// sama sekali — termasuk kasus "area di tengah antar-site" yang secara
+// visual heatmap terlihat menyatu/hijau, tapi kalau rsrpValue aktualnya
+// di bawah ambang GAP_CFG.RSRP_BLANK/RSRP_WEAK, tetap akan terdeteksi
+// dan muncul sebagai marker 🚫/⚠️ (lihat renderGapLayer).
 function detectGaps(grids,allSites,gridSize){
-  const weakGrids=grids.filter(g=>g.rsrpValue>=GAP_CFG.RSRP_BLANK&&g.rsrpValue<GAP_CFG.RSRP_WEAK);
+  // [FIX-17b] weak_coverage sekarang DIPERLUAS: sel dianggap weak kalau
+  // RSRP-nya di rentang lemah (seperti sebelumnya) ATAU RSRP-nya OK tapi
+  // SINR-nya jelek (interferensi antar site). Ini BUKAN kategori baru —
+  // tetap masuk 'weak_coverage', tetap dapat marker ⚠️, tetap ikut alur
+  // notifikasi & tombol "Rencanakan Site Baru" yang SUDAH ADA sejak awal.
+  // Alasan: di cluster site padat/overlap, RSRP hampir selalu bagus
+  // (minimal 1 site jangkau), jadi blank/weak berbasis RSRP saja jarang
+  // trigger — padahal SINR bisa tetap jelek karena saling interferensi.
+  // Menggabungnya ke weak_coverage (bukan bikin tipe terpisah) memastikan
+  // kasus ini tetap terdeteksi & tetap bisa dioptimasi lewat Blank Spot
+  // Optimizer yang sudah dirancang, tanpa menambah kompleksitas baru.
+  const weakGrids=grids.filter(g=>
+    (g.rsrpValue>=GAP_CFG.RSRP_BLANK&&g.rsrpValue<GAP_CFG.RSRP_WEAK) ||
+    (g.sinrValue<GAP_CFG.SINR_POOR&&g.rsrpValue>=GAP_CFG.RSRP_WEAK)
+  );
   const blankGrids=grids.filter(g=>g.rsrpValue<GAP_CFG.RSRP_BLANK);
   const mainSite=allSites[0].site;
   const mpdLat=111320,mpdLon=111320*Math.cos(mainSite.lat*Math.PI/180);
@@ -715,7 +1240,19 @@ function detectGaps(grids,allSites,gridSize){
     }
   }
   function cluster(inp){if(!inp.length)return[];const cD=Math.max(GAP_CFG.CLUSTER_DIST_M,gridSize*1.5),clusters=[],asgn=new Array(inp.length).fill(false);for(let i=0;i<inp.length;i++){if(asgn[i])continue;const cl=[inp[i]];asgn[i]=true;for(let j=i+1;j<inp.length;j++){if(asgn[j])continue;if(calcDistance({lat:inp[i].lat,lng:inp[i].lon},{lat:inp[j].lat,lng:inp[j].lon})<=cD){cl.push(inp[j]);asgn[j]=true;}}clusters.push(cl);}return clusters.filter(c=>c.length>=GAP_CFG.MIN_CLUSTER);}
-  function meta(cells,type,idx){const aLat=cells.reduce((s,c)=>s+c.lat,0)/cells.length,aLon=cells.reduce((s,c)=>s+c.lon,0)/cells.length,vR=cells.filter(c=>c.rsrpValue>-900),aR=vR.length?vR.reduce((s,c)=>s+c.rsrpValue,0)/vR.length:null,mR=vR.length?Math.min(...vR.map(c=>c.rsrpValue)):null,mD=Math.max(...cells.map(c=>calcDistance({lat:aLat,lng:aLon},{lat:c.lat,lng:c.lon}))),eR=Math.max(mD+gridSize,gridSize*2);let ns=null,nd=Infinity;allSites.forEach(({id,site})=>{const d=calcDistance({lat:aLat,lng:aLon},{lat:site.lat,lng:site.lng});if(d<nd){nd=d;ns=id;}});return{clusterIdx:idx,type,cells,centroidLat:aLat,centroidLon:aLon,avgRSRP:aR!==null?Math.round(aR*10)/10:null,minRSRP:mR!==null?Math.round(mR*10)/10:null,cellCount:cells.length,estimatedRadiusM:Math.round(eR),nearestSiteId:ns,nearestSiteDist:Math.round(nd),areaSqKm:(cells.length*(gridSize/1000)**2).toFixed(3)};}
+  function meta(cells,type,idx){
+    const aLat=cells.reduce((s,c)=>s+c.lat,0)/cells.length,aLon=cells.reduce((s,c)=>s+c.lon,0)/cells.length;
+    const vR=cells.filter(c=>c.rsrpValue>-900),aR=vR.length?vR.reduce((s,c)=>s+c.rsrpValue,0)/vR.length:null,mR=vR.length?Math.min(...vR.map(c=>c.rsrpValue)):null;
+    // [FIX-17b] Statistik SINR ikut dihitung (berguna buat weak_coverage
+    // yang trigger-nya dari SINR jelek, biar popup tetap informatif).
+    const vS=cells.filter(c=>c.sinrValue!==undefined),aS=vS.length?vS.reduce((s,c)=>s+c.sinrValue,0)/vS.length:null,mS=vS.length?Math.min(...vS.map(c=>c.sinrValue)):null;
+    const mD=Math.max(...cells.map(c=>calcDistance({lat:aLat,lng:aLon},{lat:c.lat,lng:c.lon}))),eR=Math.max(mD+gridSize,gridSize*2);
+    let ns=null,nd=Infinity;allSites.forEach(({id,site})=>{const d=calcDistance({lat:aLat,lng:aLon},{lat:site.lat,lng:site.lng});if(d<nd){nd=d;ns=id;}});
+    return{clusterIdx:idx,type,cells,centroidLat:aLat,centroidLon:aLon,
+      avgRSRP:aR!==null?Math.round(aR*10)/10:null,minRSRP:mR!==null?Math.round(mR*10)/10:null,
+      avgSINR:aS!==null?Math.round(aS*10)/10:null,minSINR:mS!==null?Math.round(mS*10)/10:null,
+      cellCount:cells.length,estimatedRadiusM:Math.round(eR),nearestSiteId:ns,nearestSiteDist:Math.round(nd),areaSqKm:(cells.length*(gridSize/1000)**2).toFixed(3)};
+  }
   const allB=[...spBlanks,...blankGrids];
   const bC=cluster(allB).map((c,i)=>meta(c,'blank_spot',i));
   const wC=cluster(weakGrids).map((c,i)=>meta(c,'weak_coverage',bC.length+i));
@@ -728,17 +1265,29 @@ function renderGapLayer(gaps,allSites){
   const btn=document.getElementById('toggleGapBtn');
   if(!gaps.length){updateGapBadge(0,0);if(btn)btn.style.display='none';return;}
   if(btn)btn.style.display='block';
+  // [GAP-Z] gapLayer di-addTo(map) di sini, SETELAH coverageLayer sudah
+  // ditambahkan di renderCoverageGrid (dipanggil lebih dulu di
+  // generateCoverage). Leaflet menumpuk layer sesuai urutan add — jadi
+  // gapLayer (polygon + marker 🚫/⚠️) selalu tampil DI ATAS kontur,
+  // tidak akan "ketelen" warna di baliknya.
   gapLayer=L.layerGroup().addTo(map);
   gaps.forEach((cl,idx)=>{
     const isBlank=cl.type==='blank_spot',mc=isBlank?'#ff3b30':'#ff9500';
     const pts=[];cl.cells.forEach(c=>{c.bounds.forEach(p=>pts.push(p));});
     const hull=convexHull(pts);
-    if(hull.length>=3)L.polygon(hull,{color:mc,fillColor:mc,fillOpacity:isBlank?0.35 : 0.10,weight:isBlank?1.5:1.2,opacity:0.7,dashArray:'5 4'}).addTo(gapLayer);
+    if(hull.length>=3)L.polygon(hull,{color:mc,fillColor:mc,fillOpacity:isBlank?0.35 : 0.10,weight:isBlank?2:1.5,opacity:0.9,dashArray:'5 4'}).addTo(gapLayer);
     const icon=L.divIcon({className:'',iconSize:[20,20],iconAnchor:[10,10],html:`<div style="width:20px;height:20px;background:${mc};border:1.5px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;opacity:0.9;">${isBlank?'🚫':'⚠️'}</div>`});
-    const sev=cl.cellCount>20?(isBlank?'Kritis':'Kritis'):cl.cellCount>8?(isBlank?'Sedang':'Sedang'):'Ringan';
-    const rRow=cl.avgRSRP!==null?`<tr><td style="color:#888">Avg RSRP</td><td><b style="color:${mc}">${cl.avgRSRP} dBm</b></td></tr><tr><td style="color:#888">Min RSRP</td><td><b>${cl.minRSRP} dBm</b></td></tr>`:`<tr><td colspan="2" style="color:#f66"><b>Tidak ada sinyal</b></td></tr>`;
+    const sev=cl.cellCount>20?'Kritis':cl.cellCount>8?'Sedang':'Ringan';
+    // [FIX-17b] Kalau cluster weak_coverage ini SINR-driven (RSRP-nya
+    // sebenarnya sudah OK), tampilkan info SINR juga di popup — biar jelas
+    // kenapa area ini dianggap weak (bukan cuma dari RSRP).
+    const sinrDriven = cl.avgRSRP!==null && cl.avgRSRP>=GAP_CFG.RSRP_WEAK && cl.avgSINR!==null;
+    const rRow = cl.avgRSRP!==null
+      ? `<tr><td style="color:#888">Avg RSRP</td><td><b style="color:${mc}">${cl.avgRSRP} dBm</b></td></tr><tr><td style="color:#888">Min RSRP</td><td><b>${cl.minRSRP} dBm</b></td></tr>${sinrDriven?`<tr><td style="color:#888">Avg SINR</td><td><b style="color:#9b59b6">${cl.avgSINR} dB</b></td></tr><tr><td style="color:#888">Min SINR</td><td><b>${cl.minSINR} dB</b></td></tr>`:''}`
+      : `<tr><td colspan="2" style="color:#f66"><b>Tidak ada sinyal</b></td></tr>`;
+    const noteHtml = sinrDriven ? `<p style="font-size:0.72rem;color:#9b59b6;margin:4px 0 0">📡 Terdeteksi dari SINR jelek (interferensi antar site), RSRP di area ini sebenarnya cukup</p>` : '';
     L.marker([cl.centroidLat,cl.centroidLon],{icon}).addTo(gapLayer)
-      .bindPopup(`<div style="font-family:Arial,sans-serif;min-width:230px"><div style="background:${mc};color:#fff;padding:7px 10px;margin:-14px -14px 10px;border-radius:4px 4px 0 0"><b>${isBlank?'🚫 Blank Spot':'⚠️ Weak Coverage'} #${idx+1}</b><span style="float:right;font-size:0.75rem">${sev}</span></div><table style="font-size:12px;width:100%;border-collapse:collapse">${rRow}<tr><td style="color:#888">Luas</td><td><b>${cl.areaSqKm} km²</b></td></tr><tr><td style="color:#888">Est. Radius</td><td><b>~${cl.estimatedRadiusM} m</b></td></tr><tr><td style="color:#888">Site Terdekat</td><td><b style="color:#00c7be">${cl.nearestSiteId}</b> (${cl.nearestSiteDist} m)</td></tr><tr><td style="color:#888">Koordinat</td><td style="font-size:11px">${cl.centroidLat.toFixed(5)}, ${cl.centroidLon.toFixed(5)}</td></tr></table><div style="margin-top:9px;padding-top:8px;border-top:1px solid #eee"><button onclick="goToPlanning(${cl.clusterIdx})" style="width:100%;padding:7px;background:linear-gradient(135deg,#1F3C88,#00c7be);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">📍 Rencanakan Site Baru</button></div></div>`,{maxWidth:280});
+      .bindPopup(`<div style="font-family:Arial,sans-serif;min-width:230px"><div style="background:${mc};color:#fff;padding:7px 10px;margin:-14px -14px 10px;border-radius:4px 4px 0 0"><b>${isBlank?'🚫 Blank Spot':'⚠️ Weak Coverage'} #${idx+1}</b><span style="float:right;font-size:0.75rem">${sev}</span></div><table style="font-size:12px;width:100%;border-collapse:collapse">${rRow}<tr><td style="color:#888">Luas</td><td><b>${cl.areaSqKm} km²</b></td></tr><tr><td style="color:#888">Est. Radius</td><td><b>~${cl.estimatedRadiusM} m</b></td></tr><tr><td style="color:#888">Site Terdekat</td><td><b style="color:#00c7be">${cl.nearestSiteId}</b> (${cl.nearestSiteDist} m)</td></tr><tr><td style="color:#888">Koordinat</td><td style="font-size:11px">${cl.centroidLat.toFixed(5)}, ${cl.centroidLon.toFixed(5)}</td></tr></table>${noteHtml}<div style="margin-top:9px;padding-top:8px;border-top:1px solid #eee"><button data-cl='${JSON.stringify({clusterIdx:cl.clusterIdx,type:cl.type,centroidLat:cl.centroidLat,centroidLon:cl.centroidLon,avgRSRP:cl.avgRSRP,minRSRP:cl.minRSRP,estimatedRadiusM:cl.estimatedRadiusM,areaSqKm:cl.areaSqKm,cellCount:cl.cellCount,nearestSiteId:cl.nearestSiteId,nearestSiteDist:cl.nearestSiteDist}).replace(/'/g,'&#39;')}' onclick="goToPlanning(this.dataset.cl)" style="width:100%;padding:7px;background:linear-gradient(135deg,#1F3C88,#00c7be);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">📍 Rencanakan Site Baru</button></div></div>`,{maxWidth:280});
   });
   const bCnt=gaps.filter(c=>c.type==='blank_spot').length,wCnt=gaps.filter(c=>c.type==='weak_coverage').length;
   updateGapBadge(bCnt,wCnt);
@@ -756,8 +1305,25 @@ function renderGapLayer(gaps,allSites){
 // dan "After" cukup menjalankan ulang calcCoverage() yang SAMA dengan
 // allSites = [...cluster ini, site baru].
 // ════════════════════════════════════════════════════════════════════════════
-function goToPlanning(idx){
-  const cl=window._gapClusters?.[idx];if(!cl)return;
+// [FIX-20] BUG diperbaiki: sebelumnya goToPlanning(idx) cuma nerima INDEX,
+// lalu di dalam fungsi baru re-lookup `window._gapClusters[idx]`. Masalahnya:
+// popup di-bind sebagai HTML STATIS sekali waktu render (bindPopup), tapi
+// `onclick` di dalamnya baru DIEKSEKUSI saat tombol benar-benar diklik —
+// bisa jadi lama setelah popup dibuka. Kalau di rentang waktu itu
+// `window._gapClusters` sempat berubah isi/urutan (misalnya autoRegenerate()
+// keplincut jalan karena ada input yang somehow ke-trigger, atau user
+// generate ulang di tab/site lain), maka idx yang sama akan menunjuk ke
+// CLUSTER YANG BEDA dari yang popup-nya sedang dibaca user — persis kasus
+// "klik cluster A, kedirect data cluster B".
+//
+// Fix: cluster diteruskan sebagai DATA LENGKAP (JSON di-escape ke atribut),
+// bukan index — jadi apa pun yang terjadi pada window._gapClusters setelah
+// popup dibuka, tombol tetap merujuk ke cluster yang PERSIS sama dengan
+// yang lagi ditampilkan di popup itu (snapshot at bind-time, bukan
+// lookup-at-click-time).
+function goToPlanning(clusterData){
+  const cl = typeof clusterData === 'string' ? JSON.parse(clusterData) : clusterData;
+  if (!cl) return;
   const site=siteIndex[cl.nearestSiteId];
 
   // ── [FIX-5] Bangun snapshot cluster + grid + parameter ──────────────────
@@ -782,7 +1348,10 @@ function goToPlanning(idx){
       TX_POWER: P.TX_POWER, FREQUENCY: P.FREQUENCY, BANDWIDTH: P.BANDWIDTH,
       SCENARIO: P.SCENARIO, CONDITION: P.CONDITION, CLUTTER: P.CLUTTER,
     },
-    gridSize: parseInt(document.getElementById('gridSize').value),
+    // [PERF-2] Pakai cellSizeM AKTUAL (bisa jadi sudah di-auto-coarsen),
+    // bukan angka input mentah — supaya newsite.js merekonstruksi grid
+    // dengan ukuran sel yang sama persis dengan yang sedang ditampilkan.
+    gridSize: window._lastCellSizeM || parseInt(document.getElementById('gridSize').value),
     radius: parseInt(document.getElementById('coverageRadius').value),
     antennaHeight: parseInt(document.getElementById('antennaHeight').value) || 30,
     metric: currentCoverageType,
@@ -805,8 +1374,8 @@ function goToPlanning(idx){
     // Tetap lanjut — newsite.js akan fallback ke mode standalone tanpa snapshot
   }
 
-  // Data gap (behaviour lama — tidak berubah)
-  sessionStorage.setItem(GAP_PLANNING_KEY,JSON.stringify({source:'coverage_gap_detector',timestamp:new Date().toISOString(),mainSiteId:selectedSite,gapType:cl.type,recommendedLat:cl.centroidLat,recommendedLng:cl.centroidLon,gapIndex:idx+1,avgRSRP_dBm:cl.avgRSRP,minRSRP_dBm:cl.minRSRP,estimatedRadius_m:cl.estimatedRadiusM,areaSqKm:parseFloat(cl.areaSqKm),cellCount:cl.cellCount,nearestSiteId:cl.nearestSiteId,nearestSiteDist_m:cl.nearestSiteDist,nearestSiteLat:site?.lat||null,nearestSiteLng:site?.lng||null,nearestSiteHeight:site?.height||null,nearestSiteClutter:site?.clutter||null,severityLabel:cl.cellCount>20?'Kritis':cl.cellCount>8?'Sedang':'Ringan'}));
+  // Data gap (behaviour lama — tidak berubah, cuma sumber cl-nya yang dibetulkan)
+  sessionStorage.setItem(GAP_PLANNING_KEY,JSON.stringify({source:'coverage_gap_detector',timestamp:new Date().toISOString(),mainSiteId:selectedSite,gapType:cl.type,recommendedLat:cl.centroidLat,recommendedLng:cl.centroidLon,gapIndex:(cl.clusterIdx??0)+1,avgRSRP_dBm:cl.avgRSRP,minRSRP_dBm:cl.minRSRP,estimatedRadius_m:cl.estimatedRadiusM,areaSqKm:parseFloat(cl.areaSqKm),cellCount:cl.cellCount,nearestSiteId:cl.nearestSiteId,nearestSiteDist_m:cl.nearestSiteDist,nearestSiteLat:site?.lat||null,nearestSiteLng:site?.lng||null,nearestSiteHeight:site?.height||null,nearestSiteClutter:site?.clutter||null,severityLabel:cl.cellCount>20?'Kritis':cl.cellCount>8?'Sedang':'Ringan'}));
   window.location.href=PLANNING_PAGE;
 }
 
@@ -816,13 +1385,72 @@ function toggleGapLayer(){
   if(gapVisible){map.removeLayer(gapLayer);gapVisible=false;if(btn)btn.textContent='👁 Tampilkan Gap';}
   else{gapLayer.addTo(map);gapVisible=true;if(btn)btn.textContent='🙈 Sembunyikan Gap';}
 }
-function clearGapLayer(){if(gapLayer){map.removeLayer(gapLayer);gapLayer=null;}gapVisible=true;window._gapClusters=null;updateGapBadge(0,0);}
+function clearGapLayer(){if(gapLayer){map.removeLayer(gapLayer);gapLayer=null;}gapVisible=true;window._gapClusters=null;updateGapBadge(0,0);removeBlankSpotNotification();}
 function updateGapBadge(b,w){
   const el=document.getElementById('gapBadge');if(!el)return;
   const t=(b||0)+(w||0);
   if(t===0){el.textContent='✅ Tidak ada gap';el.style.background='rgba(26,90,26,0.85)';el.style.color='#6dff9a';el.style.borderColor='#34c759';}
   else{el.innerHTML=`🚫 ${b} blank &nbsp;|&nbsp; ⚠️ ${w} weak`;el.style.background='rgba(60,10,10,0.85)';el.style.color='#ff9500';el.style.borderColor='#ff3b30';}
   el.style.display='inline-block';
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// [NOTIF] Notifikasi blank spot — banner mengambang di atas peta, terpisah
+// dari marker gap yang sudah ada (marker tetap dipertahankan untuk detail
+// per-cluster). Banner ini memberi ringkasan langsung ("N blank spot
+// terdeteksi") dan tombol yang mengarahkan ke halaman Blank Spot Optimizer
+// (cluster blank spot terbesar — gaps sudah terurut prioritas: blank_spot
+// dulu, lalu diurutkan cellCount menurun, jadi gaps[0] adalah kandidat
+// paling signifikan untuk ditindaklanjuti).
+// ══════════════════════════════════════════════════════════════════════════
+function showBlankSpotNotification(gaps){
+  removeBlankSpotNotification();
+  if(!gaps||!gaps.length)return;
+
+  const bC=gaps.filter(g=>g.type==='blank_spot');
+  const wC=gaps.filter(g=>g.type==='weak_coverage');
+  const totalArea=gaps.reduce((s,g)=>s+parseFloat(g.areaSqKm),0).toFixed(2);
+  const primary=gaps[0]; // sudah terurut: blank_spot dulu, cellCount terbesar
+  const primaryIdx=primary.clusterIdx;
+  const isBlankPrimary=primary.type==='blank_spot';
+
+  const mapContainer=document.getElementById('coverageMap');
+  const host=mapContainer?.parentElement||document.body;
+  if(host&&getComputedStyle(host).position==='static')host.style.position='relative';
+
+  const el=document.createElement('div');
+  el.id='blankSpotNotif';
+  el.style.cssText=`
+    position:absolute; top:14px; left:50%; transform:translateX(-50%);
+    z-index:1000; background:${isBlankPrimary?'linear-gradient(135deg,#7a1f1f,#4a1010)':'linear-gradient(135deg,#8a5a10,#5a3a08)'};
+    color:#fff; padding:10px 14px; border-radius:10px; box-shadow:0 4px 14px rgba(0,0,0,0.35);
+    display:flex; align-items:center; gap:10px; font-family:Arial,sans-serif; font-size:13px;
+    max-width:92%; border:1px solid rgba(255,255,255,0.2); animation:blankSpotFadeIn 0.25s ease-out;
+  `;
+  el.innerHTML=`
+    <span style="font-size:18px;flex-shrink:0;">${isBlankPrimary?'🚫':'⚠️'}</span>
+    <span style="line-height:1.4;">
+      ${bC.length?`<b>${bC.length} Blank Spot</b>`:''}${bC.length&&wC.length?' &amp; ':''}${wC.length?`<b>${wC.length} Weak Coverage</b>`:''} terdeteksi
+      <span style="opacity:0.75;"> (~${totalArea} km²)</span>
+    </span>
+    <button id="btnBlankSpotDetail" style="background:#fff;color:${isBlankPrimary?'#7a1f1f':'#8a5a10'};border:none;padding:6px 12px;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;white-space:nowrap;flex-shrink:0;">
+      📍 Buka Blank Spot Optimizer
+    </button>
+    <button id="btnBlankSpotDismiss" style="background:transparent;color:#fff;border:none;font-size:16px;cursor:pointer;opacity:0.7;flex-shrink:0;line-height:1;">✕</button>
+  `;
+  if(!document.getElementById('blankSpotNotifStyle')){
+    const style=document.createElement('style');
+    style.id='blankSpotNotifStyle';
+    style.textContent=`@keyframes blankSpotFadeIn{from{opacity:0;transform:translate(-50%,-8px);}to{opacity:1;transform:translate(-50%,0);}}`;
+    document.head.appendChild(style);
+  }
+  host.appendChild(el);
+  document.getElementById('btnBlankSpotDetail')?.addEventListener('click',()=>goToPlanning(primary));
+  document.getElementById('btnBlankSpotDismiss').addEventListener('click',removeBlankSpotNotification);
+}
+
+function removeBlankSpotNotification(){
+  document.getElementById('blankSpotNotif')?.remove();
 }
 
 // ── Loading ───────────────────────────────────────────────────────────────────
@@ -863,7 +1491,8 @@ function sendCoverageToCompare(){
   const payload = {
     siteId      : selectedSite,
     metric      : currentCoverageType,
-    gridSize    : parseInt(document.getElementById('gridSize').value),
+    // [PERF-2] cellSizeM aktual (bisa auto-coarsen), bukan input mentah
+    gridSize    : window._lastCellSizeM || parseInt(document.getElementById('gridSize').value),
     radius      : parseInt(document.getElementById('coverageRadius').value),
     neighbours,
     siteLat     : site.lat,
@@ -948,4 +1577,89 @@ function sendCoverageToCompare(){
   }
 }
 
-console.log('coverage.js v6.6 — [FIX-5] goToPlanning() simpan snapshot cluster untuk newsite.js | [FIX-1..4] tetap dipertahankan dari v6.5');
+console.log(
+  'coverage.js v10.3 — probe klik dibatasi jarak (FIX-19), zona handover dicabut\n' +
+  '  ✅ [FIX-19] BUG diperbaiki: probe klik-detail dulu nyari "cell terdekat"\n' +
+  '     TANPA batas jarak maksimum — jadi klik di mana pun di peta (bahkan\n' +
+  '     jauh di luar area yang benar-benar dihitung) selalu balikin data,\n' +
+  '     seolah titik itu memang dihitung — padahal enggak. Sekarang jarak\n' +
+  '     asli (meter, bukan cuma selisih derajat) ke cell terdekat dicek;\n' +
+  '     kalau melebihi ~1.5x ukuran cell, popup nampilin "di luar area\n' +
+  '     simulasi" alih-alih data yang salah.\n' +
+  '  ℹ️  [REVERT] Zona handover (outline putus-putus + note di popup) yang\n' +
+  '     ditambahkan sebelumnya DICABUT sesuai keputusan — fitur ini tidak\n' +
+  '     dipakai. Data isVoronoiBorder tetap dihitung (dipakai teks "Handover\n' +
+  '     zone: X%" di panel analisis), cuma tidak lagi divisualisasikan.\n' +
+  '  ✅ [FIX-17b] weak_coverage DIPERLUAS (bukan kategori baru!): sel dengan\n' +
+  '     RSRP OK (>= RSRP_WEAK) tapi SINR jelek (< GAP_CFG.SINR_POOR=-5dB)\n' +
+  '     SEKARANG ikut dihitung sebagai weak_coverage — dapat marker ⚠️,\n' +
+  '     ikut notifikasi, ikut tombol "Rencanakan Site Baru" SAMA seperti\n' +
+  '     weak_coverage biasa. Ini nutup kasus dense/overlapping cluster di\n' +
+  '     mana RSRP nyaris selalu bagus (minimal 1 site jangkau) sehingga\n' +
+  '     blank/weak berbasis RSRP jarang trigger — padahal SINR bisa tetap\n' +
+  '     jelek akibat interferensi antar site. (Revisi dari percobaan\n' +
+  '     sebelumnya yang sempat bikin kategori terpisah "interference_zone"\n' +
+  '     — ternyata kebanyakan kompleksitas & gak nyambung ke alur Blank\n' +
+  '     Spot Optimizer yang sudah dirancang; sekarang disederhanakan jadi\n' +
+  '     cuma memperluas definisi weak_coverage yang SUDAH ADA.)\n' +
+  '  ✅ [FIX-16] Sinkronisasi definisi blank visual (kontur) vs analitik\n' +
+  '     (detectGaps) — titik yang grids[] (ber-noise) anggap blank, kontur\n' +
+  '     RSRP dipaksa ikut "berlubang" di lokasi sama, biar notifikasi &\n' +
+  '     visual selalu senada, gak ada dua sumber kebenaran berbeda.\n' +
+  '  ✅ [FIX-16] Root cause temuan "area blank di grid tapi tampak aman di\n' +
+  '     kontur": rsrpMatrix (visual) pakai nilai deterministik (tanpa noise),\n' +
+  '     sementara detectGaps() pakai grids[] ber-noise — titik yang jatuh\n' +
+  '     blank AKIBAT noise negatif bisa tampil "biru/aman" di kontur padahal\n' +
+  '     tetap terdeteksi & muncul marker 🚫 (dua sumber kebenaran gak sinkron\n' +
+  '     secara visual). Sekarang: kalau grids[].rsrpValue (ber-noise) sudah\n' +
+  '     dianggap blank oleh GAP_CFG.RSRP_BLANK, rsrpMatrix DIPAKSA ikut\n' +
+  '     rendah juga (bikin lubang kontur persis di lokasi yang sama) — di\n' +
+  '     luar titik itu tetap deterministik seperti biasa (petal tetap mulus).\n' +
+  '  ✅ [FIX-15] Edge taper — root cause border kotak masih kelihatan tegas\n' +
+  '     di beberapa sisi walau kontur sudah organik: box pencarian PERSEGI,\n' +
+  '     tapi sinyal gabungan multi-site + multi-sektor gak seragam segala\n' +
+  '     arah (lembah antar sektor / titik dekat site pinggir cluster cuma\n' +
+  '     diredam sampai Am, bukan nol) — bisa "hidup" pas nyentuh SISI kotak\n' +
+  '     (titik terdekat) walau SUDUT kotak (lebih jauh) sudah pudar duluan.\n' +
+  '     Sekarang matrix visual (BUKAN grids[]/detectGaps()/statistik)\n' +
+  '     diredam progresif makin dekat ke sisi kotak manapun. Margin\n' +
+  '     dinaikkan 1.2×→1.6× (FADE_MARGIN_FACTOR) supaya radius yang\n' +
+  '     diminta user tetap full-strength, taper cuma di ring buffer\n' +
+  '     tambahan setelahnya.\n' +
+  '  ✅ [FIX-14] Radius input = kontrol utama (searchRadius = Math.min(radius\n' +
+  '     * FADE_MARGIN_FACTOR, MAX_AUTO_RADIUS_M), TIDAK lagi kalah sama\n' +
+  '     physicsMaxDist yang generous)\n' +
+  '  ✅ [FIX-14] BUG diperbaiki: searchRadius dulu = Math.max(radius, physicsMaxDist)\n' +
+  '     — artinya radius yg lo SET DI UI bisa keimpa jarak fisika (-145dBm)\n' +
+  '     yang sengaja generous, bikin area jadi jauh lebih luas dari yang\n' +
+  '     diminta (mis. set 500m tp jadi ribuan meter). Sekarang radius input\n' +
+  '     = kontrol utama, physics cuma nambah margin +20% biar tepi kontur\n' +
+  '     sempat fade natural, TIDAK PERNAH membesarkan jauh dari permintaan.\n' +
+  '  ⚠️  BUTUH <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js">\n' +
+  '     ditambahkan SEBELUM <script src="coverage.js"> di HTML.\n' +
+  '  ✅ [FIX-13] ROOT CAUSE "gak serapih Atoll" ketemu: bukan soal jenis\n' +
+  '     visualisasi (grid/heatmap/kontur), tapi karena RSRP yang digambar\n' +
+  '     SELAMA INI sudah termasuk shadow fading (noise acak per titik).\n' +
+  '     Tool RF planning nyata (Atoll dkk) menggambar RSRP DETERMINISTIK\n' +
+  '     (jarak+antena sektor+PL+clutter saja); shadow fading dipakai utk\n' +
+  '     probabilitas terpisah, bukan warna piksel. Sekarang matrix visual\n' +
+  '     (rsrpMatrix/sinrMatrix → kontur) pakai computeRSRPDeterministic()\n' +
+  '     (tanpa noise) → pola "kelopak" per sektor jadi mulus & jelas.\n' +
+  '     grids[] (dipakai detectGaps/statistik/klik-detail) TIDAK berubah,\n' +
+  '     tetap pakai nilai ber-noise seperti sebelumnya — cuma matrix visual\n' +
+  '     yang dibersihkan.\n' +
+  '  ✅ [FIX-6] antennaGain() dibetulkan: offset/(bw/2) → offset/bw\n' +
+  '  ✅ [FIX-10] API d3-contour dibetulkan: contours.contour(values,threshold)\n' +
+  '  ✅ [FIX-11] MAX_AUTO_RADIUS_M 2000m→5000m & MAX_CELLS 20k→45k\n' +
+  '  ✅ [FIX-12] Gradasi warna kontur interpolasi tiap 3dB gaya Atoll\n' +
+  '  ✅ [CONTOUR v9] Isoband via d3-contour (BSD-3-Clause, aman komersial)\n' +
+  '  ✅ [PROBE] Klik peta cari cell terdekat dari grids[] mentah utk popup detail\n' +
+  '  ✅ [BLANK-UNIFIED] Definisi "coverage exist" tetap berbasis grids[]\n' +
+  '     (ber-noise, sama dgn detectGaps()) — konsisten di semua mode\n' +
+  '  ✅ [SCOPE] Area komputasi tetap terbatas ke main site + hingga 6 neighbour\n' +
+  '  ✅ [GAP-INDEP] detectGaps()/renderGapLayer()/showBlankSpotNotification()\n' +
+  '     TIDAK diubah — tetap baca grids[] mentah, notifikasi blank spot tetap\n' +
+  '     jalan otomatis kapan pun ada cluster titik di bawah ambang RSRP_BLANK,\n' +
+  '     baik di pinggir maupun DI TENGAH cluster site manapun.\n' +
+  '  [PERF-1/2][ALIGN/ALIGN2/ALIGN3][FIX-1..5][NOTIF] tetap dipertahankan'
+);

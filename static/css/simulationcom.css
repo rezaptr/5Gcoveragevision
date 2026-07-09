@@ -1130,3 +1130,171 @@
   color: #334155;
   line-height: 1.7;
 }
+/* ================================================
+   simulationcom-v8-additions.css
+   Tambahan untuk simulationcom.js v8
+   ── metric-tabs (switch RSRP/SINR, gaya evaluation.js)
+   ── file-chip-row (multi-file, tanpa dropdown clutter)
+   ── best-scenario-banner
+   ── site-summary-table (per site, row skenario terbaik disorot)
+   ================================================ */
+
+/* ── METRIC TABS ─────────────────────────────── */
+.metric-tabs {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.metric-tab {
+  border: 2px solid #dde3f0;
+  background: #f5f7ff;
+  color: #64748b;
+  padding: 0 14px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.metric-tab:hover:not(.active) {
+  border-color: #1F3C88;
+  color: #1F3C88;
+}
+.metric-tab.active {
+  background: #1F3C88;
+  border-color: #1F3C88;
+  color: #fff;
+}
+
+/* ── FILE CHIP ROW ───────────────────────────── */
+.file-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+}
+.file-chip-empty {
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-style: italic;
+  padding: 6px 4px;
+}
+.file-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #f0f4ff;
+  border: 1.5px solid #dde3f7;
+  border-radius: 8px;
+  padding: 6px 8px 6px 12px;
+}
+.fc-name { font-size: 11.5px; font-weight: 700; color: #1F3C88; line-height: 1.3; }
+.fc-meta { font-size: 10px; color: #7a86a8; }
+.fc-remove {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  transition: all 0.12s;
+}
+.fc-remove:hover { background: #fee2e2; color: #dc2626; }
+
+/* ── BEST SCENARIO BANNER ────────────────────── */
+.best-scenario-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg,#fffbea,#fff8e0);
+  border: 2px solid #f4a800;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 12px;
+  color: #7a4f00;
+  line-height: 1.6;
+}
+.best-scenario-banner i { font-size: 20px; color: #f4a800; flex-shrink: 0; }
+.best-scenario-banner b { color: #1F3C88; }
+
+/* ── SITE SUMMARY TABLES ──────────────────────── */
+.summary-tables-container {
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.site-summary-block {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 12px 14px;
+}
+.site-summary-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #1F3C88;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.site-summary-table th,
+.site-summary-table td {
+  text-align: center;
+}
+.site-summary-table tbody tr.row-best {
+  background: #fffbea;
+}
+.site-summary-table tbody tr.row-best td {
+  font-weight: 700;
+}
+.best-badge {
+  color: #f4a800;
+  margin-left: 4px;
+}
+
+/* ── MAP FILTER BAR (filter skenario untuk peta) ─ */
+.map-filter-bar-standalone {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.06);
+}
+.map-filter-bar-standalone .map-filter-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #64748b;
+  white-space: nowrap;
+}
+.map-filter-bar-standalone select {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1F3C88;
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: 1px solid #dbe1ee;
+  background: #fff;
+  cursor: pointer;
+  flex: 1;
+  max-width: 360px;
+}
+
+/* ── RESPONSIVE (map filter, toolbar) ─────────── */
+@media (max-width: 900px) {
+  .comp-toolbar { flex-wrap: wrap; height: auto; }
+  .metric-tabs { order: 3; width: 100%; justify-content: center; }
+  .map-filter-bar-standalone select { max-width: none; }
+}

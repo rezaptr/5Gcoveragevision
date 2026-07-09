@@ -1,14 +1,3 @@
-// ================= SIMULATION ROUTE v4.5 — DETERMINISTIK EDITION =================
-//
-// PERUBAHAN v4.5 → v4.5.1 (Legend & Alert fix):
-//   [FIX-L1] updateLegend() RSRP: 5 baris (hapus "< -140"), label "-85~0" s/d "-140~-120"
-//   [FIX-L2] updateLegend() SINR: 5 baris (hapus "< -10 dB"), "-40~-5 dB" jadi S5
-//   [FIX-L3] sinrColor(): threshold diselaraskan — '#ff3333' untuk v < -5 (tidak ada -10)
-//   [FIX-L4] dotColor() di updateCellTable: idem sinrColor
-//   [FIX-A1] Alert _doCalculateSINR: tambah \n setelah "selesai"
-//
-// TIDAK DIUBAH: semua kalkulasi RSRP/SINR, sampling, path loss, spatial noise
-// =================================================================================
 (function () {
   'use strict';
 
@@ -56,10 +45,12 @@
   // ── Konstanta RF ──────────────────────────────────────────────────────────
   const CAL_DEFAULT = {
     TX_POWER   : 46,
+    ANTENNA_GAIN: 8,
+    CABLE_LOSS  : 0.5,
     FREQUENCY  : 2300,
     BANDWIDTH  : 30e6,
     MOBILE_H   : 1.5,
-    ANTENNA_Am : 25,
+    ANTENNA_Am : 30,
     BEAMWIDTH  : 65,
     NF         : 7,
     ANT_HEIGHT : 30,
@@ -104,7 +95,24 @@
   // ══════════════════════════════════════════════════════════════════════════
   // SPATIAL NOISE
   // ══════════════════════════════════════════════════════════════════════════
-  const SPATIAL_GRID_SIZE = 0.0005;
+  // [ALIGN-1] D_COR per skenario/kondisi — disamakan persis dengan dtsimulation.js
+  // (3GPP TR 38.901 Table 7.5-6), menggantikan grid tetap 0.0005° yang dipakai
+  // sebelumnya untuk SEMUA skenario. Ini penting karena decorrelation distance
+  // shadow fading berbeda signifikan antar skenario (UMi jauh lebih kecil dari
+  // UMa/RMa) — memakai satu grid tetap membuat korelasi spasial shadow fading
+  // tidak sesuai kondisi lingkungan yang sedang disimulasikan.
+  const D_COR_DEG = {
+    uma_los  : 37  / 111320,
+    uma_nlos : 50  / 111320,
+    uma_mixed: 50  / 111320,
+    umi_los  : 10  / 111320,
+    umi_nlos : 13  / 111320,
+    umi_mixed: 13  / 111320,
+    rma_los  : 37  / 111320,
+    rma_nlos : 120 / 111320,
+    rma_mixed: 120 / 111320,
+  };
+  const D_COR_DEFAULT = 50 / 111320;
 
   function hashInt(n) {
     n = ((n >>> 16) ^ n) * 0x45d9f3b;
@@ -112,9 +120,13 @@
     return ((n >>> 16) ^ n) >>> 0;
   }
 
-  function spatialNoise(lat, lng, std) {
-    const cLat = Math.round(lat / SPATIAL_GRID_SIZE);
-    const cLng = Math.round(lng / SPATIAL_GRID_SIZE);
+  // [ALIGN-1] spatialNoise() sekarang menerima scenKey (mis. 'umi_nlos') untuk
+  // memilih grid decorrelation distance yang sesuai — signature & logika
+  // identik dengan dtsimulation.js.
+  function spatialNoise(lat, lng, std, scenKey) {
+    const gridSize = D_COR_DEG[scenKey] || D_COR_DEFAULT;
+    const cLat = Math.round(lat / gridSize);
+    const cLng = Math.round(lng / gridSize);
     const s1   = hashInt(cLat * 73856093 ^ cLng * 19349663 ^ (FIXED_SEED >>> 0));
     const s2   = hashInt(s1 + 2654435761);
     const u1   = (s1 >>> 0) / 4294967296 + 1e-10;
@@ -313,7 +325,7 @@
   // ANTENNA GAIN
   // ══════════════════════════════════════════════════════════════════════════
   function antennaGainFromOffset(angularOffset_deg) {
-    const ratio = angularOffset_deg / (CAL.BEAMWIDTH / 2);
+    const ratio = angularOffset_deg / CAL.BEAMWIDTH;
     return -Math.min(12 * ratio * ratio, CAL.ANTENNA_Am);
   }
 
@@ -836,35 +848,44 @@
     samplingPoints.forEach((point, idx) => {
       const cellResults = [];
       Object.entries(siteMap).forEach(([siteId, sectors]) => {
-        const firstSec = sectors[0];
-        const dist     = haversineDistance(firstSec.siteLat, firstSec.siteLng, point.lat, point.lng);
-        const d        = Math.max(dist, 10);
-        const brng     = bearingCalc(firstSec.siteLat, firstSec.siteLng, point.lat, point.lng);
-        const { bestSec, bestGain } = pickBestSectorForPoint(brng, sectors);
-        if (!bestSec) return;
+        let bestResult = null;
 
-        const sc   = (overrideScenario  || bestSec.scenario  || 'uma').toLowerCase();
-        const cond = (overrideCondition || bestSec.condition || 'nlos').toLowerCase();
-        const cl   = firstSec.isMain ? overrideClutter   : (bestSec.clutter   || 'N/A');
-        const hBS  = firstSec.isMain ? CAL.ANT_HEIGHT    : bestSec.siteHeight;
+        sectors.forEach(sec => {
+          const dist = haversineDistance(sec.siteLat, sec.siteLng, point.lat, point.lng);
+          const d = Math.max(dist, 10);
+          const brng = bearingCalc(sec.siteLat, sec.siteLng, point.lat, point.lng);
+          const offset = Math.abs(((brng - sec.azimuth + 540) % 360) - 180);
+          const gain = antennaGainFromOffset(offset);
 
-        const pl      = pathLoss(sc, cond, d, CAL.FREQUENCY, hBS, CAL.MOBILE_H);
-        const cLoss   = getClutterLoss(cl);
-        const sKey    = `${sc}_${cond==='los_nlos'?'nlos':cond}`;
-        const sStd    = SHADOW_STD[sKey] || 6.0;
-        const xi      = spatialNoise(point.lat, point.lng, sStd);
-        const rsrpRaw = CAL.TX_POWER + bestGain - pl - cLoss + xi;
-        const rsrp    = applyRxFloor(rsrpRaw);
+          const sc = (overrideScenario || sec.scenario || 'uma').toLowerCase();
+          const cond = (overrideCondition || sec.condition || 'nlos').toLowerCase();
+          const cl = sec.isMain ? overrideClutter : (sec.clutter || 'N/A');
+          const hBS = sec.isMain ? CAL.ANT_HEIGHT : sec.siteHeight;
 
-        cellResults.push({
-          siteId, siteLat: firstSec.siteLat, siteLng: firstSec.siteLng,
-          isMain: firstSec.isMain, sectorNum: bestSec.sectorNum, azimuth: bestSec.azimuth,
-          pci: bestSec.pci, cellId: bestSec.cellId, cellName: bestSec.cellName,
-          gnbId: bestSec.gnbId, pciColor: bestSec.pciColor, arfcn: bestSec.arfcn,
-          dist, bearing: brng, antennaGain: bestGain,
-          pathLoss: pl, clutterLoss: cLoss, shadowStd: sStd,
-          rsrp, scenario: modelLabel, clutter: cl, category: null,
+          const pl = pathLoss(sc, cond, d, CAL.FREQUENCY, hBS, CAL.MOBILE_H);
+          const cLoss = getClutterLoss(cl);
+          const sKey = `${sc}_${cond === 'los_nlos' ? 'mixed' : cond}`; // samakan dengan dtsim
+          const sStd = SHADOW_STD[sKey] || 6.0;
+          const xi = spatialNoise(point.lat, point.lng, sStd, sKey);   // xi PER SEKTOR
+
+          const rsrp = applyRxFloor(
+            CAL.TX_POWER + CAL.ANTENNA_GAIN - CAL.CABLE_LOSS + gain - pl - cLoss + xi
+          );
+
+          if (!bestResult || rsrp > bestResult.rsrp) {
+            bestResult = {
+              siteId, siteLat: sec.siteLat, siteLng: sec.siteLng,
+              isMain: sec.isMain, sectorNum: sec.sectorNum, azimuth: sec.azimuth,
+              pci: sec.pci, cellId: sec.cellId, cellName: sec.cellName,
+              gnbId: sec.gnbId, pciColor: sec.pciColor, arfcn: sec.arfcn,
+              dist, bearing: brng, antennaGain: gain,
+              pathLoss: pl, clutterLoss: cLoss, shadowStd: sStd, shadowXi: xi,
+              rsrp, scenario: modelLabel, clutter: cl, category: null,
+            };
+          }
         });
+
+        if (bestResult) cellResults.push(bestResult);
       });
 
       if (!cellResults.length) return;
@@ -898,7 +919,8 @@
         `Rx floor: ${RX_SENSITIVITY_FLOOR} dBm [TS 38.101-1]\n` +
         `Avg Serving RSRP: ${avg} dBm\n` +
         `Seed deterministik: ${FIXED_SEED}\n` +
-        `TX Power: ${CAL.TX_POWER} dBm | Frekuensi: ${CAL.FREQUENCY} MHz\n` +
+        `TX Power: ${CAL.TX_POWER} dBm | G_E,max: +${CAL.ANTENNA_GAIN} dBi | Cable Loss: -${CAL.CABLE_LOSS} dB\n` +
+        `Frekuensi: ${CAL.FREQUENCY} MHz | Am (pattern): ${CAL.ANTENNA_Am} dB\n` +
         `Antenna Height: ${CAL.ANT_HEIGHT} m | Beamwidth: ${CAL.BEAMWIDTH}°\n` +
         `PCI unik: ${pciSet.size}`
       );
@@ -926,8 +948,8 @@
         if (ci === 0) return;
         if (c.rsrp >= thresholdDbm) I_linear_all += dbmToLinear(c.rsrp);
       });
-      // [FIX-L2] SINR clamp selaras dengan legend: floor -40, ceil 40
-      const sinr_s = Math.max(-40, Math.min(40, linearToDbm(S_linear / (I_linear_all + N_linear))));
+      // [FIX-L2] SINR clamp selaras dengan legend: floor -3, ceil 3
+      const sinr_s = Math.max(-3, Math.min(40, linearToDbm(S_linear / (I_linear_all + N_linear))));
       const rsrq   = estimateRSRQ(result.serving.rsrp, sinr_s);
 
       rsrpResults[idx].sinr = sinr_s;
@@ -1222,7 +1244,8 @@
     if (!rsrpResults.length) return alert('Belum ada data!');
     const hasSINR = rsrpResults[0]?.sinr !== undefined;
     let csv = 'Point,Lat,Lng,ServingSite,ServingSector,Distance(m),Bearing(deg),' +
-              'AntennaGain(dB),PathLoss(dB),ClutterLoss(dB),ShadowSTD(dB),Clutter,Model,' +
+              'AntennaPatternGain(dB),PathLoss(dB),ClutterLoss(dB),ShadowSTD(dB),Shadow_xi(dB),Clutter,Model,' +
+              'G_E_max(dBi),Cable_Loss(dB),' +
               'RSRP(dBm),RSRQ(dB),PCI,ARFCN,gNBID,CellID,CellName';
     if (hasSINR) csv += ',SINR(dB)';
     csv += '\n';
@@ -1232,7 +1255,9 @@
       csv += `${r.index},${r.lat.toFixed(6)},${r.lng.toFixed(6)},${s.siteId},${s.sectorNum},` +
              `${s.dist.toFixed(1)},${s.bearing.toFixed(1)},${s.antennaGain.toFixed(1)},` +
              `${s.pathLoss.toFixed(1)},${s.clutterLoss.toFixed(1)},${s.shadowStd||'6.0'},` +
+              `${s.shadowXi!=null ? s.shadowXi.toFixed(2) : ''},` +
              `${s.clutter},${s.scenario},` +
+             `${CAL.ANTENNA_GAIN},${CAL.CABLE_LOSS},` +
              `${s.rsrp.toFixed(1)},${s.rsrq!=null?s.rsrq.toFixed(1):''},` +
              `${s.pci??''},${s.arfcn||466850},${s.gnbId||''},${s.cellId||''},"${cName}"`;
       if (hasSINR) csv += `,${r.sinr.toFixed(1)}`;
@@ -1327,11 +1352,15 @@
 })();
 
 console.log(
-  'simulation.js v4.5.1 — Legend & Alert fix\n' +
+  'simulation.js v5.0 — RF physics disamakan dengan dtsimulation.js\n' +
+  '  ✅ [ALIGN-1] Shadow fading: D_COR per skenario/kondisi (3GPP TR 38.901 Table 7.5-6),\n' +
+  '     menggantikan grid tetap 0.0005° untuk semua skenario\n' +
+  '  ✅ [ALIGN-2] Formula RSRP: TX + G_E,max(+8dBi) - CableLoss(0.5dB) + G_h(θ) - PL - Lc + xi\n' +
+  '     (sebelumnya tidak menyertakan G_E,max & Cable Loss sama sekali)\n' +
+  '  ✅ Am (antenna pattern) : 25 → 30 dB [3GPP TR 38.901 Table 7.3-1]\n' +
+  '  ✅ Export CSV: tambah kolom G_E_max(dBi), Cable_Loss(dB)\n' +
+  '  ℹ️  TIDAK ADA kalibrasi di halaman ini (input rute+sampling, bukan CSV DT aktual) —\n' +
+  '     hanya physics/formula RF yang disamakan dengan dtsimulation.js, bukan alur kalibrasinya\n' +
   '  ✅ RSRP 5 bucket: -85~0 | -95~-85 | -105~-95 | -120~-105 | -140~-120\n' +
-  '  ✅ SINR 5 bucket: 20~40 | 10~20 | 0~10 | -5~0 | -40~-5\n' +
-  '  ✅ sinrColor/dotColor: tidak ada threshold -10 lagi\n' +
-  '  ✅ Alert SINR: newline diperbaiki + distribusi 5 bucket\n' +
-  '  ✅ SINR floor: -40 dB (selaras legend)\n' +
-  '  Kalkulasi RSRP/SINR/sampling: identik v4.5'
+  '  ✅ SINR 5 bucket: 20~40 | 10~20 | 0~10 | -5~0 | -40~-5'
 );

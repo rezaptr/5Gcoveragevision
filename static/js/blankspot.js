@@ -1,11 +1,4 @@
 'use strict';
-// ================================================
-// BLANK SPOT OPTIMIZER v2.2
-// Revisi:
-// 1. Legend RSRP & SINR ranges diperbaiki
-// 2. TX Power via dropdown (43/46/49 dBm)
-// 3. Bandwidth via dropdown (5~100 MHz)
-// ================================================
 
 let mapBefore, mapAfter;
 let siteMarkerAfter = null;
@@ -20,6 +13,8 @@ let gapGridsAfter   = [];
 let gapRadiusM  = 300;
 let gapCenterLat = null, gapCenterLng = null;
 let beforeLayerGroup = null;
+let afterLayerGroup  = null;
+let _beforeClickHandler = null, _afterClickHandler = null; // [CONTOUR] probe klik-detail
 
 const GAP_PLANNING_KEY = 'gapPlanningData';
 const CV_PLANNING_KEY  = 'coveragePlanningSnapshot';
@@ -32,13 +27,22 @@ const DOMINANT_THRESHOLD_DB = 30;
 const SHADOW_STD = { uma_los:4, uma_nlos:6, uma_los_nlos:5.5, umi_los:4, umi_nlos:7.82, umi_los_nlos:7, rma_los:4, rma_nlos:8, rma_los_nlos:6.5 };
 const CLUTTER_DB = { dense_urban:0, metropolitan:0, urban:0, suburban:1, sub_urban:1, rural:0.5, open:0, industrial:2, forest:3, water:-1, highway:-1.5, 'n/a':0 };
 
+// [FIX-ALIGN] Disamakan dengan coverage.js (ALIGN fix): RSRP = TX + G_E,max -
+// CableLoss + G_h(θ) - PL - Lc + xi. Sebelumnya G_E,max/CableLoss gak ada di
+// sini, bikin RSRP site baru di panel "After" under-estimate ~7.5dB
+// dibanding site-site existing di panel "Before" (yang datanya dari
+// coverage.js, sudah include ini) — perbandingan before/after jadi gak adil,
+// site baru kelihatan lebih lemah dari yang seharusnya.
+const ANTENNA_GAIN = 8;
+const CABLE_LOSS = 0.5;
+
 function getP() {
   const n = (id, d) => { const e = document.getElementById(id); if (!e) return d; const v = parseFloat(e.value); return isFinite(v) ? v : d; };
   const s = (id, d) => document.getElementById(id)?.value || d;
   const bw = n('bsoGap', 20), bwHz = bw * 1e6, nf = 7, tn = -174 + 10 * Math.log10(bwHz) + nf;
   return {
     TX_POWER: n('txGap', 46), FREQUENCY: n('freqGap', 2300),
-    BANDWIDTH: bw, NF: nf, ANTENNA_Am: 25, BEAMWIDTH: 35,
+    BANDWIDTH: bw, NF: nf, ANTENNA_Am: 25, BEAMWIDTH: 65,
     SCENARIO: s('scenarioGap','uma'), CONDITION: s('conditionGap','nlos'), CLUTTER: s('clutterGap','urban'),
     THERMAL_NOISE_LIN: Math.pow(10, tn / 10), SINR_FLOOR: -40, SINR_CEIL: 40,
   };
@@ -80,7 +84,11 @@ function pathLoss(sc, cond, dist_m, fMhz, hBS, hUT) {
     default: return 28+22*Math.log10(d3D)+20*Math.log10(fc);
   }
 }
-function antennaGain(off, bw, Am) { return -Math.min(12*(off/(bw/2))**2, Am); }
+// [FIX-6-EQUIV] θ_3dB pada TR 36.942 adalah beamwidth PENUH, bukan
+// setengahnya. offset/(bw/2) yang lama bikin sektor terlalu tajam (di
+// offset=bw/2 harusnya -3dB, bukan -12dB) — sama seperti bug yang dibetulin
+// di coverage.js/newsite.js.
+function antennaGain(off, bw, Am) { return -Math.min(12*(off/bw)**2, Am); }
 function bestGain(brng, sectors, bw, Am) {
   if (!sectors?.length) return 0;
   let best = -Infinity;
@@ -96,8 +104,11 @@ function spatialNoise(lat, lng, std, sid) {
   const u1=(s1>>>0)/4294967296+1e-10, u2=(s2>>>0)/4294967296+1e-10;
   return Math.max(-2*std, Math.min(2*std, Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2)*std));
 }
+// [FIX-ALIGN] +ANTENNA_GAIN -CABLE_LOSS ditambahkan, selaras dengan
+// coverage.js. Ini yang menyamakan skala RSRP site baru dengan RSRP
+// existing-site di grid "before" (yang datang dari coverage.js).
 function computeRSRP(dist, gainDb, hBS, sc, cond, lat, lon, sid, clutter, P) {
-  return P.TX_POWER + gainDb - pathLoss(sc, cond, dist, P.FREQUENCY, hBS, MOBILE_H) - getClutterLoss(clutter) + spatialNoise(lat, lon, getShadowStd(sc, cond), sid);
+  return P.TX_POWER + ANTENNA_GAIN - CABLE_LOSS + gainDb - pathLoss(sc, cond, dist, P.FREQUENCY, hBS, MOBILE_H) - getClutterLoss(clutter) + spatialNoise(lat, lon, getShadowStd(sc, cond), sid);
 }
 
 function computeSINR(servingRSRP_dbm, allRSRP_dbm_list, P) {
@@ -309,20 +320,152 @@ function renderExistingMarkers() {
   }
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// [CONTOUR] Dipindahkan langsung dari pendekatan coverage.js — visualisasi
+// isoband via d3-contour, bukan lagi grid per-cell kotak-kotak. Data yang
+// dipakai TETAP grids[] yang sama persis (gapGridsBefore/gapGridsAfter) —
+// cuma cara gambarnya yang disamakan dengan halaman simulasi coverage.
+//
+// [SIMPEL] Matrix untuk kontur direkonstruksi LANGSUNG dari grids[] yang ada
+// (pakai bounds tiap cell buat tau spacing dLat/dLon, dan min/max lat/lon
+// dari grids itu sendiri) — TIDAK butuh coverage.js kirim data tambahan apa
+// pun. Ini otomatis jalan baik untuk "before" (grid asli dari coverage.js)
+// maupun "after" (grid before + sel baru dari site tambahan, area bisa lebih
+// luas dari before — matrix menyesuaikan otomatis tiap kali di-render ulang).
+// ══════════════════════════════════════════════════════════════════════════
+
+const CONTOUR_ANCHORS = {
+  rsrp: [
+    { min: -120, color: '#fffb00' }, // basis (S4) — di bawah ini gak digambar
+    { min: -105, color: '#70ff66' },
+    { min: -95,  color: '#00a955' },
+    { min: -85,  color: '#0042a5' },
+    { min: -75,  color: '#00286b' },
+  ],
+  sinr: [
+    { min: -5,  color: '#fffb00' }, // basis (S4)
+    { min: 0,   color: '#70ff66' },
+    { min: 10,  color: '#00a955' },
+    { min: 20,  color: '#0042a5' },
+    { min: 30,  color: '#00286b' },
+  ],
+};
+const STEP_DB = 3;
+function hexToRgb(hex){ const n=parseInt(hex.slice(1),16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function rgbToHex([r,g,b]){ return '#'+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,'0')).join(''); }
+function lerpColor(c1,c2,t){ const a=hexToRgb(c1),b=hexToRgb(c2); return rgbToHex(a.map((v,i)=>v+(b[i]-v)*t)); }
+function buildFineThresholds(type){
+  const anchors = CONTOUR_ANCHORS[type];
+  const out = [];
+  for(let i=0;i<anchors.length-1;i++){
+    const a=anchors[i], b=anchors[i+1];
+    const span = b.min - a.min;
+    const steps = Math.max(1, Math.round(span/STEP_DB));
+    for(let s=0;s<steps;s++){ const t=s/steps; out.push({ min: a.min+span*t, color: lerpColor(a.color,b.color,t) }); }
+  }
+  out.push(anchors[anchors.length-1]);
+  return out;
+}
+const CONTOUR_THRESHOLDS = { rsrp: buildFineThresholds('rsrp'), sinr: buildFineThresholds('sinr') };
+
+// [SIMPEL] Rekonstruksi matrix langsung dari grids[] — dLat/dLon diambil dari
+// bounds cell pertama (sudah ada di data), min/max lat/lon dari grids itu
+// sendiri. Cell yang gak ada di grids[] otomatis kosong (sentinel rendah),
+// gak perlu metadata tambahan dari coverage.js.
+function buildContourMatrix(grids, metric){
+  const dLat = Math.abs(grids[0].bounds[2][0] - grids[0].bounds[0][0]);
+  const dLon = Math.abs(grids[0].bounds[2][1] - grids[0].bounds[0][1]);
+  let minLat=Infinity,maxLat=-Infinity,minLon=Infinity,maxLon=-Infinity;
+  grids.forEach(g=>{
+    const lon=g.lon??g.lng;
+    if(g.lat<minLat)minLat=g.lat; if(g.lat>maxLat)maxLat=g.lat;
+    if(lon<minLon)minLon=lon; if(lon>maxLon)maxLon=lon;
+  });
+  const numRows = Math.round((maxLat-minLat)/dLat)+1;
+  const numCols = Math.round((maxLon-minLon)/dLon)+1;
+  const SENTINEL = -999;
+  const matrix = new Float64Array(numRows*numCols).fill(SENTINEL);
+  grids.forEach(g=>{
+    const lon=g.lon??g.lng;
+    const ri = Math.round((g.lat-minLat)/dLat);
+    const ci = Math.round((lon-minLon)/dLon);
+    const val = metric==='rsrp' ? g.rsrpValue : (g.sinrValue ?? g.rsrpValue);
+    matrix[ri*numCols+ci] = val;
+  });
+  return { matrix, numRows, numCols, minLat, minLon, dLat, dLon };
+}
+
+// Render kontur ke map manapun (mapBefore atau mapAfter), return layerGroup
+// baru (caller yang simpan referensinya utk di-remove pas render ulang).
+function renderContourOnMap(map, grids, metric){
+  if (!grids.length) return null;
+  if (typeof d3 === 'undefined' || !d3.contours) {
+    console.warn('[CONTOUR] d3 belum ter-load — fallback ke grid per-cell.');
+    return renderGridFallback(map, grids, metric);
+  }
+  const { matrix, numRows, numCols, minLat, minLon, dLat, dLon } = buildContourMatrix(grids, metric);
+  const bands = CONTOUR_THRESHOLDS[metric];
+  const contourGen = d3.contours().size([numCols, numRows]);
+  const lg = L.layerGroup();
+  function idxToLatLng([x,y]){ return [minLat + y*dLat, minLon + x*dLon]; }
+  bands.forEach(band=>{
+    let mp;
+    try { mp = contourGen.contour(matrix, band.min); }
+    catch(e){ console.warn('[CONTOUR] gagal hitung threshold', band.min, e); return; }
+    if(!mp?.coordinates?.length) return;
+    mp.coordinates.forEach(rings=>{
+      const latlngRings = rings.map(ring=>ring.map(idxToLatLng));
+      L.polygon(latlngRings, { stroke:false, fillColor:band.color, fillOpacity:0.68 }).addTo(lg);
+    });
+  });
+  lg.addTo(map);
+  return lg;
+}
+
+// [FALLBACK] Grid per-cell (perilaku lama) — dipakai otomatis kalau d3 belum ada
+function renderGridFallback(map, grids, metric){
+  const lg = L.layerGroup();
+  grids.forEach(g=>{
+    const val = metric==='rsrp' ? g.rsrpValue : (g.sinrValue ?? g.rsrpValue);
+    const v = Math.round(val*10)/10;
+    const color = getColor(metric, v);
+    L.polygon(g.bounds,{color,fillColor:color,fillOpacity:0.72,weight:0})
+      .bindPopup(`<b>${metric.toUpperCase()}: ${v} ${metric==='rsrp'?'dBm':'dB'}</b>`)
+      .addTo(lg);
+  });
+  lg.addTo(map);
+  return lg;
+}
+
+// [PROBE] Klik peta cari cell terdekat dari grids[] mentah — presisi data
+// tetap ada walau visualnya sekarang polygon besar, bukan per-cell kotak.
+function attachProbe(map, getGrids, handlerRefSetter, handlerRefGetter){
+  const old = handlerRefGetter();
+  if (old) map.off('click', old);
+  const handler = function(e){
+    const grids = getGrids();
+    if (!grids || !grids.length) return;
+    const clat=e.latlng.lat, clon=e.latlng.lng;
+    let nearest=null, nd=Infinity;
+    for (const g of grids){ const lon=g.lon??g.lng; const dd=(g.lat-clat)**2+(lon-clon)**2; if(dd<nd){nd=dd;nearest=g;} }
+    if (!nearest) return;
+    const metric=currentCoverageType, unit=metric==='rsrp'?'dBm':'dB';
+    const val = metric==='rsrp'?nearest.rsrpValue:(nearest.sinrValue??nearest.rsrpValue);
+    L.popup({maxWidth:240}).setLatLng(e.latlng).setContent(
+      `<b>${metric.toUpperCase()}: ${val.toFixed(1)} ${unit}</b><br>SS-RSRP: ${nearest.rsrpValue.toFixed(1)} dBm${nearest.sinrValue!=null?`<br>SS-SINR: ${nearest.sinrValue.toFixed(1)} dB`:''}${nearest.servingSiteId?`<br>${nearest.servingSiteId==='SITE_BARU'?'📡 Site Baru':'🗼 '+nearest.servingSiteId}`:''}`
+    ).openOn(map);
+  };
+  map.on('click', handler);
+  handlerRefSetter(handler);
+}
+
 function renderBeforeMap() {
   if (!clusterSnapshot?.grids?.length) return;
   if (beforeLayerGroup) { mapBefore.removeLayer(beforeLayerGroup); }
-  beforeLayerGroup = L.layerGroup().addTo(mapBefore);
   const metric = currentCoverageType;
   gapGridsBefore = clusterSnapshot.grids;
-  gapGridsBefore.forEach(g => {
-    const val = metric==='rsrp' ? g.rsrpValue : (g.sinrValue ?? g.rsrpValue);
-    const v   = Math.round(val*10)/10;
-    const color = getColor(metric, v);
-    L.polygon(g.bounds, { color, fillColor:color, fillOpacity:0.72, weight:0 })
-      .bindPopup(`<b>${metric.toUpperCase()}: ${v} ${metric==='rsrp'?'dBm':'dB'}</b><br>SS-RSRP: ${g.rsrpValue.toFixed(1)} dBm`)
-      .addTo(beforeLayerGroup);
-  });
+  beforeLayerGroup = renderContourOnMap(mapBefore, gapGridsBefore, metric);
+  attachProbe(mapBefore, ()=>gapGridsBefore, h=>{_beforeClickHandler=h;}, ()=>_beforeClickHandler);
   updateLegend('before', gapGridsBefore);
   updateMiniStats('before', gapGridsBefore);
 }
@@ -504,17 +647,10 @@ function overlayGridsWithSINR(beforeGrids, newSiteRSRP, P) {
 }
 
 function renderAfterMap(grids) {
-  mapAfter.eachLayer(l => { if(l._bsoAfter) mapAfter.removeLayer(l); });
+  if (afterLayerGroup) { mapAfter.removeLayer(afterLayerGroup); }
   const metric=currentCoverageType;
-  grids.forEach(g => {
-    const val=metric==='rsrp'?g.rsrpValue:(g.sinrValue??g.rsrpValue);
-    const v=Math.round(val*10)/10;
-    const color=getColor(metric,v);
-    const poly=L.polygon(g.bounds,{color,fillColor:color,fillOpacity:0.72,weight:0})
-      .bindPopup(`<b>${metric.toUpperCase()}: ${v} ${metric==='rsrp'?'dBm':'dB'}</b><br>${g.servingSiteId==='SITE_BARU'?'📡 Site Baru':'🗼 Existing'}`)
-      .addTo(mapAfter);
-    poly._bsoAfter=true;
-  });
+  afterLayerGroup = renderContourOnMap(mapAfter, grids, metric);
+  attachProbe(mapAfter, ()=>gapGridsAfter, h=>{_afterClickHandler=h;}, ()=>_afterClickHandler);
   updateLegend('after', grids);
   updateMiniStats('after', grids);
 }
@@ -682,4 +818,28 @@ function showLoading(text) {
 }
 function hideLoading() { document.getElementById('bsoLoading')?.remove(); }
 
-console.log('blankspot.js v2.2 — Legend ranges fixed | TX Power & BW dropdown');
+console.log(
+  'blankspot.js v3.0 — kontur dipindahkan dari coverage.js (bukan grid lagi)\n' +
+  '  ⚠️  BUTUH <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js">\n' +
+  '     ditambahkan SEBELUM <script src="blankspot.js"> di HTML. Tanpa itu,\n' +
+  '     otomatis fallback ke grid per-cell (halaman tetap jalan).\n' +
+  '  ✅ [CONTOUR] Before & After sekarang dirender pakai d3-contour, sama\n' +
+  '     persis pendekatan yang dipakai coverage.js — bukan lagi kotak per-cell.\n' +
+  '  ✅ [SIMPEL] Matrix kontur direkonstruksi LANGSUNG dari grids[] yang ada\n' +
+  '     (dLat/dLon dari bounds cell, min/max dari grids itu sendiri) — TIDAK\n' +
+  '     perlu perubahan apa pun di coverage.js/sessionStorage. Otomatis jalan\n' +
+  '     baik untuk "before" maupun "after" (area after bisa lebih luas kalau\n' +
+  '     site baru menjangkau di luar extent before — matrix menyesuaikan\n' +
+  '     sendiri tiap render).\n' +
+  '  ✅ [PROBE] Klik peta cari cell terdekat dari grids[] mentah utk popup\n' +
+  '     detail presisi (menggantikan popup per-cell yang hilang karena\n' +
+  '     sekarang polygon-nya besar, bukan kotak kecil per-cell lagi).\n' +
+  '  ✅ [FIX-ALIGN] computeRSRP() ditambah ANTENNA_GAIN(+8dB)/CABLE_LOSS(-0.5dB)\n' +
+  '     — sebelumnya RSRP site baru under-estimate ~7.5dB dibanding grid\n' +
+  '     "before" (yang datang dari coverage.js, sudah include ini).\n' +
+  '  ✅ [FIX-6-EQUIV] antennaGain(): offset/(bw/2) → offset/bw\n' +
+  '  ℹ️  Alur & struktur data (GAP_PLANNING_KEY, CV_PLANNING_KEY, before=\n' +
+  '     passthrough, after=before+overlay site baru), legend, statistik,\n' +
+  '     delta panel — semua TIDAK diubah, tetap baca grids[] mentah yang sama.\n' +
+  '  [v2.2] Legend ranges & TX/BW dropdown tetap dipertahankan'
+);

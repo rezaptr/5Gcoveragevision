@@ -25,6 +25,14 @@
   <button id="btnSimSINR"      class="btn-toolbar btn-teal" disabled>Simulasi SS-SINR</button>
   <button id="btnSimPCI"       class="btn-toolbar btn-teal" disabled>Simulasi PCI</button>
   <button id="btnExportDtClean" class="btn-toolbar btn-green" disabled>Simpan DT Clean</button>
+  <button id="btnKalibrasi" class="btn-toolbar btn-kalibrasi" disabled>Kalibrasi Model</button>
+
+  <!-- [CAL-6] Toggle Before/After Kalibrasi — hanya muncul setelah kalibrasi berhasil -->
+  <div class="toolbar-divider" id="calibViewDivider" style="display:none;"></div>
+  <div class="mode-toggle-group" id="calibViewToggle" style="display:none;" title="Pilih hasil visualisasi peta: sebelum atau sesudah kalibrasi">
+    <button id="btnViewBefore" class="btn-mode active" type="button">Before Kalibrasi</button>
+    <button id="btnViewAfter"  class="btn-mode" type="button">After Kalibrasi</button>
+  </div>
 
   <div style="margin-left:auto;display:flex;gap:8px;">
     <button id="btnDebugSite" class="btn-toolbar btn-debug">Debug</button>
@@ -48,7 +56,7 @@
       </div>
 
       <div id="sinrLegend" class="rsrp-legend" style="display:none;">
-        <h4>SS-SINR Simulasi (dB)</h4>
+        <h4 id="sinrLegendTitle">SS-SINR Simulasi (dB)</h4>
         <table>
           <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
           <tbody id="sinrLegendBody"></tbody>

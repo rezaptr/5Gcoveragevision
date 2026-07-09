@@ -10,9 +10,6 @@ import psycopg2
 from psycopg2 import pool
 from functools import wraps
 
-print(f"[STARTUP] PORT env = {os.getenv('PORT')}")
-print(f"[STARTUP] DATABASE_URL set = {bool(os.getenv('DATABASE_URL'))}")
-
 # ================= APP =================
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev")
@@ -29,22 +26,37 @@ app.config['PROFILE_UPLOAD_FOLDER'] = PROFILE_UPLOAD_FOLDER
 app.config['SHAPE_UPLOAD_FOLDER']   = SHAPE_UPLOAD_FOLDER
 
 # ================= CONNECTION POOL =================
+# Kalau DATABASE_URL di-set (misal pas deploy), pakai itu.
+# Kalau nggak ada (local dev), fallback ke kredensial local Postgres lo.
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is not set!")
+LOCAL_DB_CONFIG = dict(
+    dbname=os.getenv("DB_NAME", "DB_Pengguna"),
+    user=os.getenv("DB_USER", "postgres"),
+    password=os.getenv("DB_PASSWORD", "Oktober16"),
+    host=os.getenv("DB_HOST", "localhost"),
+    port=os.getenv("DB_PORT", "5432"),
+)
 
 db_pool = None
 
 def get_db_pool():
     global db_pool
     if db_pool is None:
-        db_pool = psycopg2.pool.SimpleConnectionPool(
-            minconn=1,
-            maxconn=10,
-            dsn=DATABASE_URL,
-            connect_timeout=5
-        )
+        if DATABASE_URL:
+            db_pool = psycopg2.pool.SimpleConnectionPool(
+                minconn=1,
+                maxconn=10,
+                dsn=DATABASE_URL,
+                connect_timeout=5
+            )
+        else:
+            db_pool = psycopg2.pool.SimpleConnectionPool(
+                minconn=1,
+                maxconn=10,
+                connect_timeout=5,
+                **LOCAL_DB_CONFIG
+            )
     return db_pool
 
 def get_db_connection():
@@ -89,7 +101,6 @@ def health():
 # ================= LOGIN =================
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # Kalau sudah login, tidak perlu lihat halaman login lagi
     if 'role' in session:
         return redirect(url_for('main'))
 
@@ -224,7 +235,6 @@ def change_password():
     new_password     = request.form.get('new_password', '')
     confirm_password = request.form.get('confirm_password', '')
 
-    # Validasi input kosong
     if not old_password or not new_password or not confirm_password:
         flash("Semua field wajib diisi!", "danger")
         return redirect(url_for('profile'))
@@ -269,6 +279,10 @@ def main():
     result = render_template('main.html')
     print(f"[TIMER] /main render: {time.time() - start:.3f}s")
     return result
+
+@app.route('/google6f35a6c71e1b8732.html')
+def google_verify():
+    return "google-site-verification: google6f35a6c71e1b8732.html"
 
 @app.route('/route')
 @role_required(['dt_engineer', 'rf_engineer'])
@@ -537,5 +551,6 @@ def parse_xlsx(filepath):
 
 # ================= RUN =================
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    port  = int(os.getenv("PORT", 5000))
+    debug = os.getenv("FLASK_DEBUG", "1") == "1"
+    app.run(host="0.0.0.0", port=port, debug=debug)

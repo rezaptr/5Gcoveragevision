@@ -238,6 +238,8 @@
 
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- [CONTOUR] Wajib dimuat SEBELUM newsite.js — dipakai untuk render isoband/kontur -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <script src="{{ url_for('static', filename='js/newsite.js') }}"></script>
 <script>
   // Toggle Parameter Simulasi (default terbuka)

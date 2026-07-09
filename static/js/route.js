@@ -450,16 +450,7 @@ function generateSampling() {
 }
 
 // ================= FILTER ISOLATED POINTS (OSRM TABLE) =================
-/**
- * filterIsolatedPoints — buang ring points yang kemungkinan besar
- * berada di "sisi lain" barrier (jalan tol, sungai, dll).
- *
- * Cara kerja:
- *   1. 1 request ke OSRM Table endpoint (source = site, dest = semua ring points)
- *   2. Ring point dengan durasi driving > MAX_DURATION_SEC → terisolir → drop
- *   3. Fallback ke semua titik kalau hasil filter terlalu sedikit (< MIN_POINTS)
- *      atau kalau OSRM Table error — rute tetap bisa generate
- */
+
 async function filterIsolatedPoints(points, site) {
   const MIN_POINTS       = 6;
   const MAX_DURATION_SEC = 240;

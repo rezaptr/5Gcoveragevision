@@ -1,5 +1,5 @@
 /* ===================================================================
-   DTSIMULATION.CSS — v15.2
+   DTSIMULATION.CSS — v15.2 (+ v22.0 addon: kalib-group spacing)
    Layout:
      Kiri  → peta (flex grow) + tabel cell info (fix 175px) — ~75%
      Kanan → info panel scroll internal — ~25%
@@ -139,6 +139,76 @@ html, body {
   flex          : 3;
   min-width     : 0;
   overflow      : hidden;
+}
+.btn-kalibrasi { background: #e65100 !important; }
+.btn-kalibrasi:hover:not(:disabled) { background: #bf360c !important; }
+ 
+.kalib-panel {
+  background   : #1a2340;
+  border       : 1px solid rgba(255,140,0,0.35);
+  border-radius: 10px;
+  padding      : 12px;
+  margin-top   : 10px;
+  color        : #fff;
+  font-size    : 11px;
+}
+.kalib-title {
+  font-size  : 12px;
+  font-weight: 700;
+  color      : #ff9800;
+  margin-bottom: 8px;
+}
+.kalib-coef-box {
+  background  : rgba(255,152,0,0.1);
+  border      : 1px solid rgba(255,152,0,0.3);
+  border-radius: 6px;
+  padding     : 6px 9px;
+  font-family : monospace;
+  font-size   : 10px;
+  margin-bottom: 8px;
+  line-height : 1.7;
+  color       : #ffd54f;
+}
+.kalib-table {
+  width          : 100%;
+  border-collapse: collapse;
+  font-size      : 11px;
+  margin-top     : 6px;
+}
+.kalib-table th {
+  color        : rgba(255,255,255,0.55);
+  font-weight  : 600;
+  padding      : 4px 8px;
+  text-align   : left;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+.kalib-table td {
+  padding      : 5px 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  color        : #e0e0e0;
+}
+.kalib-table tr:last-child td { border-bottom: none; }
+.td-before { color: #ff8a65; }
+.td-after  { color: #69f0ae; font-weight: 600; }
+.td-delta-good { color: #69f0ae; font-weight: 700; }
+.td-delta-warn { color: #ff8a65; font-weight: 700; }
+.kalib-improve {
+  margin-top : 8px;
+  font-size  : 11px;
+  color      : #69f0ae;
+  font-weight: 600;
+  text-align : center;
+  padding    : 6px;
+  background : rgba(105,240,174,0.08);
+  border-radius: 6px;
+  border     : 1px solid rgba(105,240,174,0.2);
+}
+
+/* ── v22.0 addon: pemisah antar blok kalibrasi UMa/UMi ──────────── */
+.kalib-group + .kalib-group {
+  margin-top : 14px;
+  padding-top: 12px;
+  border-top : 1px dashed rgba(255,255,255,0.15);
 }
 
 /* ── Peta ────────────────────────────────────────────────────────── */
@@ -333,9 +403,7 @@ html, body {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   [PERUBAHAN v15.2] Kolom kanan: diperlebar agar seragam dengan
-   simulationroute.css — min-width 210px→260px, max-width 270px→320px,
-   padding & font info-box disesuaikan
+   Kolom kanan
    ══════════════════════════════════════════════════════════════════ */
 .simulation-info {
   flex          : 1;

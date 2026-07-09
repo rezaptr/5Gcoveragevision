@@ -1,6 +1,6 @@
 {% extends "base_app.html" %}
 
-{% block title %}Komparasi Simulasi — Drive Test vs File Simulasi{% endblock %}
+{% block title %}Komparasi Simulasi — Model Murni vs Drive Test Real{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -10,44 +10,52 @@
 {% block content %}
 
 <header class="main-header">
-  <h1>KOMPARASI SIMULASI — DRIVE TEST VS FILE SIMULASI</h1>
+  <h1>KOMPARASI SIMULASI — MODEL MURNI VS DRIVE TEST REAL</h1>
 </header>
 
 <section class="comp-toolbar">
 
-  <button id="uploadDTBtn" class="btn btn-upload">
-    <i class="fas fa-file-upload"></i> Upload Drive Test
+  <button id="uploadBtn" class="btn btn-upload-sim">
+    <i class="fas fa-upload"></i> Upload File Simulasi
   </button>
 
-  <button id="uploadSimBtn" class="btn btn-upload-sim">
-    <i class="fas fa-upload"></i> Upload File Simulasi
+  <button id="resetBtn" class="btn btn-upload" style="background:#64748b;">
+    <i class="fas fa-rotate-left"></i> Reset
+  </button>
+
+  <button id="exportPdfBtn" class="btn btn-process-both">
+    <i class="fas fa-file-pdf"></i> Export PDF
   </button>
 
   <div class="toolbar-divider"></div>
 
-  <button id="processRSRPBtn" class="btn btn-process-rsrp" disabled>
-    <i class="fas fa-signal"></i> Proses SS-RSRP
-  </button>
-
-  <button id="processSINRBtn" class="btn btn-process-sinr" disabled>
-    <i class="fas fa-chart-line"></i> Proses SS-SINR
-  </button>
-
-  <button id="processBothBtn" class="btn btn-process-both" disabled>
-    <i class="fas fa-layer-group"></i> Proses SS-RSRP + SS-SINR
-  </button>
+  <div class="metric-tabs">
+    <button id="metricTabRsrp" class="metric-tab active"><i class="fas fa-signal"></i> SS-RSRP</button>
+    <button id="metricTabSinr" class="metric-tab"><i class="fas fa-chart-line"></i> SS-SINR</button>
+  </div>
 
   <div class="toolbar-status">
-    <span id="dtStatus"  class="status-badge">DT: —</span>
-    <span id="simStatus" class="status-badge">Sim: —</span>
+    <span id="csvStatus" class="status-badge">CSV: —</span>
   </div>
 
 </section>
 
-<input type="file" id="dtFileInput"  accept=".csv,.txt,.log"  style="display:none;">
-<input type="file" id="simFileInput" accept=".csv,.txt,.xlsx" style="display:none;">
+<input type="file" id="csvInput" accept=".csv" multiple style="display:none;">
 
 <div class="comp-page">
+
+  <!-- ── FILE CHIPS ── -->
+  <div class="file-chip-row" id="fileChipRow">
+    <div class="file-chip-empty">Belum ada file diupload. Klik "Upload File Simulasi" — bisa pilih banyak file sekaligus (masing-masing file sudah berisi Sim &amp; Aktual).</div>
+  </div>
+
+  <!-- ── MAP FILTER ── -->
+  <div class="map-filter-bar-standalone">
+    <span class="map-filter-label">Tampilkan skenario:</span>
+    <select id="mapFileFilter">
+      <option value="all">Semua Skenario (gabungan)</option>
+    </select>
+  </div>
 
   <!-- ── MAPS ROW ── -->
   <div class="maps-row">
@@ -55,15 +63,15 @@
     <div class="map-card">
       <div class="map-card-header dt-hdr">
         <div class="map-card-title-wrap">
-          <span class="map-card-badge"><i class="fas fa-route"></i> Drive Test Real</span>
-          <span class="map-card-sub">Data lapangan aktual dari logfile pengukuran</span>
+          <span class="map-card-badge"><i class="fas fa-route"></i> Drive Test Aktual</span>
+          <span class="map-card-sub">Nilai RSRP_Aktual / SINR_Aktual dari data lapangan</span>
         </div>
         <span class="map-card-count" id="dtPointCount">0 titik</span>
       </div>
       <div id="dtMap" class="map-div">
         <div id="dtMapPlaceholder" class="map-placeholder">
           <i class="fas fa-file-upload"></i>
-          <p>Upload file Drive Test CSV<br>untuk menampilkan titik pengukuran</p>
+          <p>Upload file simulasi CSV<br>untuk menampilkan titik aktual</p>
         </div>
       </div>
       <div id="dtLegend" class="map-legend" style="display:none;">
@@ -80,15 +88,15 @@
     <div class="map-card">
       <div class="map-card-header sim-hdr">
         <div class="map-card-title-wrap">
-          <span class="map-card-badge"><i class="fas fa-broadcast-tower"></i> Hasil Simulasi</span>
-          <span class="map-card-sub">Data dari file simulasi RF planning tool</span>
+          <span class="map-card-badge"><i class="fas fa-broadcast-tower"></i> Hasil Simulasi (Murni)</span>
+          <span class="map-card-sub">Nilai RSRP_Sim / SINR_Sim — sebelum kalibrasi</span>
         </div>
         <span class="map-card-count" id="simCellCount">0 titik</span>
       </div>
       <div id="simMap" class="map-div">
         <div id="simMapPlaceholder" class="map-placeholder">
           <i class="fas fa-broadcast-tower"></i>
-          <p>Upload file Simulasi CSV/XLSX<br>untuk menampilkan hasil simulasi</p>
+          <p>Upload file simulasi CSV<br>untuk menampilkan hasil simulasi</p>
         </div>
       </div>
       <div id="simLegend" class="map-legend" style="display:none;">
@@ -102,112 +110,46 @@
 
   </div>
 
-  <!-- ── METRIK EVALUASI UTAMA ── -->
+  <!-- ── SKENARIO TERBAIK BANNER ── -->
+  <div id="bestScenarioBanner" class="best-scenario-banner" style="display:none;"></div>
+
+  <!-- ── RINGKASAN ME / RMSE / SD PER SITE ── -->
   <div class="metrics-section" id="metricsSection" style="display:none;">
     <div class="metrics-section-header">
       <h3 class="panel-title" style="margin:0;border:none;padding:0;">
-        <i class="fas fa-calculator"></i> Metrik Evaluasi — Point-to-Point
+        <i class="fas fa-calculator"></i> Ringkasan ME / RMSE / SD — Model Murni (per Site, Skenario, Kondisi)
       </h3>
       <span class="metrics-section-sub">
-        Komparasi nilai simulasi terhadap Drive Test per koordinat identik (ITU-R M.2135)
+        Dihitung dari Sim vs Aktual, tanpa kalibrasi
       </span>
     </div>
-    <div class="metrics-cards-wrap" id="metricsCardsWrap">
-      <!-- diisi JS -->
-    </div>
-    <div class="metrics-interpretation" id="metricsInterpretation">
-      <!-- diisi JS -->
-    </div>
-  </div>
-
-  <!-- ── ANALISIS VALIDASI ── -->
-  <div class="analysis-panel">
-    <h3 class="panel-title"><i class="fas fa-chart-bar"></i> Analisis Validasi</h3>
-    <div class="analysis-body">
-      <div id="overallAnalysisContent">
-        <div class="waiting-notice">
-          <i class="fas fa-satellite-dish"></i>
-          Upload Drive Test dan Simulasi,<br>
-          lalu klik "Proses SS-RSRP", "Proses SS-SINR", atau "Proses SS-RSRP + SS-SINR"
-        </div>
+    <div id="summaryTablesContainer" class="summary-tables-container">
+      <div class="waiting-notice">
+        <i class="fas fa-table"></i>
+        Upload file simulasi untuk melihat ringkasan ME / RMSE / SD per site.
       </div>
     </div>
   </div>
 
-  <!-- ── PANEL TAMBAHAN (collapsible) ── -->
+  <!-- ── PANEL TAMBAHAN (drill-down jarak) ── -->
   <div id="extraPanelsContainer" style="display:none;">
 
-    <details class="extra-panel-toggle">
+    <details class="extra-panel-toggle" open>
       <summary>
-        <i class="fas fa-table"></i> Perbandingan Distribusi
-        <span class="extra-panel-hint">Persentase titik per kategori sinyal — DT vs Simulasi</span>
+        <i class="fas fa-ruler-horizontal"></i> Akurasi per Rentang Jarak — Skenario Terbaik
+        <span class="extra-panel-hint">Breakdown ME/RMSE/SD per jarak, khusus skenario dengan RMSE rata-rata terkecil</span>
       </summary>
       <div class="extra-panel-body">
-        <div class="panel comp-panel">
-          <h3 class="panel-title" id="compTableTitle">
-            <i class="fas fa-balance-scale"></i> Perbandingan Distribusi
-          </h3>
-          <div class="comp-table-wrap">
-            <table class="comp-table">
-              <colgroup>
-                <col style="width:44%">
-                <col style="width:18%">
-                <col style="width:18%">
-                <col style="width:20%">
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>KATEGORI</th>
-                  <th style="text-align:center">DT REAL (%)</th>
-                  <th style="text-align:center">SIMULASI (%)</th>
-                  <th style="text-align:right" title="Selisih: Simulasi − DT">Δ (%)</th>
-                </tr>
-              </thead>
-              <tbody id="compTableBody">
-                <tr>
-                  <td colspan="4" class="td-empty">Data akan muncul setelah proses</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </details>
-
-    <details class="extra-panel-toggle">
-      <summary>
-        <i class="fas fa-info-circle"></i> Info Data
-        <span class="extra-panel-hint">Jumlah titik dan ketersediaan metrik per file</span>
-      </summary>
-      <div class="extra-panel-body">
-        <div class="panel info-panel">
-          <h3 class="panel-title"><i class="fas fa-info-circle"></i> Info Data</h3>
-          <div id="infoContent">
+        <div class="panel">
+          <div id="distanceAnalysisContent">
             <div class="waiting-notice">
-              <i class="fas fa-file-import"></i>
-              Upload kedua file untuk melihat info data
+              <i class="fas fa-route"></i>
+              Upload data untuk melihat analisis per jarak.
             </div>
           </div>
         </div>
       </div>
     </details>
-    
-<details class="extra-panel-toggle" open>
-  <summary>
-    <i class="fas fa-ruler-horizontal"></i> Akurasi per Rentang Jarak
-    <span class="extra-panel-hint">Seberapa akurat simulasi di jarak dekat vs jauh?</span>
-  </summary>
-  <div class="extra-panel-body">
-    <div class="panel">
-      <div id="distanceAnalysisContent">
-        <div class="waiting-notice">
-          <i class="fas fa-route"></i>
-          Proses data terlebih dahulu untuk melihat analisis per jarak
-        </div>
-      </div>
-    </div>
-  </div>
-</details>
 
   </div><!-- /extraPanelsContainer -->
 
@@ -218,6 +160,5 @@
 {% block extra_js %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="{{ url_for('static', filename='js/simulationcom.js') }}"></script>
 {% endblock %}

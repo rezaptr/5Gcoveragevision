@@ -4,178 +4,148 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-
 <link rel="stylesheet" href="{{ url_for('static', filename='css/evaluation.css') }}">
 {% endblock %}
 
 {% block content %}
 
 <header class="main-header">
-  <h1>EVALUASI AKURASI MODEL SIMULASI</h1>
+  <div>
+    <h1>EVALUASI AKURASI MODEL SIMULASI</h1>
+  </div>
 </header>
-
 
 <section class="comp-toolbar">
   <button id="uploadBtn" class="btn btn-upload">
-    <i class="fas fa-file-upload"></i> Import CSV Simulasi DT
+    <i class="fas fa-file-upload"></i> Import CSV (bisa banyak file)
   </button>
-  <input type="file" id="csvInput" accept=".csv" style="display:none;">
- 
+  <input type="file" id="csvInput" accept=".csv" multiple style="display:none;">
+
   <div class="toolbar-divider"></div>
- 
-  <button id="analyzeRsrpBtn" class="btn btn-process-rsrp" disabled>
-    <i class="fas fa-signal"></i> Analisis SS-RSRP
-  </button>
- 
-  <button id="analyzeSinrBtn" class="btn btn-process-sinr" disabled>
-    <i class="fas fa-chart-line"></i> Analisis SS-SINR
+
+  <button id="exportPdfBtn" class="btn btn-export">
+    <i class="fas fa-file-pdf"></i> Export PDF
   </button>
 
   <button id="resetEvalBtn" class="btn btn-danger">
     <i class="fas fa-redo"></i> Reset
   </button>
- 
+
   <div class="toolbar-status">
-    <span id="siteStatus" class="status-badge">Site: —</span>
-    <span id="csvStatus"  class="status-badge">CSV: —</span>
+    <span id="csvStatus" class="status-badge">CSV: —</span>
   </div>
 </section>
- 
 
 <div class="comp-page">
 
-  <!-- ROW 1: DUA PETA — struktur identik dengan komparasi -->
-  <div class="maps-row">
-
-    <div class="map-card">
-      <div class="map-card-header dt-hdr">
-        <div class="map-card-title-wrap">
-          <span class="map-card-badge"><i class="fas fa-route"></i> Drive Test Aktual</span>
-          <span class="map-card-sub">Baseline lapangan — warna = kategori sinyal aktual</span>
-        </div>
-      </div>
-      <div id="dtEvalMap" class="map-div">
-        <div id="dtMapPlaceholder" class="map-placeholder">
-          <i class="fas fa-file-upload"></i>
-          <p>Import CSV untuk menampilkan titik Drive Test</p>
-        </div>
-      </div>
-      <div id="dtLegendBox" class="map-legend" style="display:none;">
-        <h4 id="dtLegendTitle">SS-RSRP Aktual (dBm)</h4>
-        <table>
-          <thead><tr><th></th><th>Rentang</th><th>%</th></tr></thead>
-          <tbody id="dtLegendBody"></tbody>
-        </table>
-      </div>
+  <!-- FILE MANAGER (collapsible) -->
+  <div class="file-manager">
+    <button class="file-manager-toggle" id="fileManagerToggle" type="button">
+      <i class="fas fa-folder-open"></i>
+      <span id="fileManagerSummary">Belum ada file diupload</span>
+      <i class="fas fa-chevron-down toggle-caret"></i>
+    </button>
+    <div class="file-chip-row collapsed" id="fileChipRow">
+      <div class="file-chip-empty">Belum ada file diupload. Klik "Import CSV" untuk mulai — bisa pilih banyak file sekaligus.</div>
     </div>
+  </div>
 
-    <div class="maps-divider"></div>
-
-    <div class="map-card">
-      <div class="map-card-header sim-hdr">
-        <div class="map-card-title-wrap">
-          <span class="map-card-badge"><i class="fas fa-broadcast-tower"></i> Hasil Simulasi</span>
-          <span class="map-card-sub">Warna = magnitude error (Sim − DT)</span>
-        </div>
-      </div>
-      <div id="simEvalMap" class="map-div">
-        <div id="simMapPlaceholder" class="map-placeholder">
-          <i class="fas fa-broadcast-tower"></i>
-          <p>Import CSV untuk menampilkan error simulasi</p>
-        </div>
-      </div>
-      <div id="simLegendBox" class="map-legend" style="display:none;">
-        <h4 id="simLegendTitle">Error SS-RSRP (Sim−DT)</h4>
-        <table>
-          <thead><tr><th></th><th>Keterangan</th></tr></thead>
-          <tbody id="simLegendBody"></tbody>
-        </table>
-      </div>
+  <!-- CLUTTER FILTER + METRIC SWITCH -->
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="map-filter-label">Lihat Clutter:</span>
+      <select id="clutterFilterSelect" class="clutter-filter-select"><option value="">—</option></select>
     </div>
+    <div class="metric-tabs">
+      <button id="metricTabRsrp" class="metric-tab active"><i class="fas fa-signal"></i> SS-RSRP</button>
+      <button id="metricTabSinr" class="metric-tab"><i class="fas fa-chart-line"></i> SS-SINR</button>
+    </div>
+  </div>
 
-  </div><!-- /maps-row -->
+  <!-- HEADLINE STAT CARDS -->
+  <div class="stat-row" id="statCardsWrap"></div>
 
-  <!-- ROW 2 DST: hasil analisis — muncul setelah klik Analisis -->
-  <div id="resultsSection">
+  <!-- SUMMARY TABLE -->
+  <div class="metrics-section">
+    <div class="metrics-section-header">
+      <h3><i class="fas fa-table"></i> Ringkasan RMSE — <span id="tableClutterLabel">Site &amp; Skenario</span></h3>
+      <span class="metrics-section-sub">Model Murni (N Total) vs Evaluasi Kalibrasi (N Eval, validation set)</span>
+    </div>
+    <div class="table-scroll">
+      <table class="summary-table">
+        <thead>
+          <tr>
+            <th rowspan="2">Site &amp; Skenario</th>
+            <th colspan="2">Model Murni</th>
+            <th colspan="4">Evaluasi Kalibrasi</th>
+          </tr>
+          <tr>
+            <th>N Total</th>
+            <th>RMSE</th>
+            <th>N Eval</th>
+            <th>RMSE Sebelum</th>
+            <th>RMSE Sesudah</th>
+            <th>Δ RMSE</th>
+          </tr>
+        </thead>
+        <tbody id="summaryTableBody">
+          <tr><td colspan="7" class="td-empty">Upload CSV untuk melihat ringkasan RMSE</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div style="font-size:10.5px;color:#8a94ab;padding:0 4px;">
+    <b>Model Murni</b>: seluruh titik clutter ini (N Total), akurasi model sebelum kalibrasi apapun — baseline. &nbsp;·&nbsp;
+    <b>Evaluasi Kalibrasi</b>: hanya titik validation (N Eval, 30% yang tidak dipakai fitting koefisien) — before dan after dari titik yang identik.
+  </div>
 
-    <!-- LINE CHARTS -->
-    <div class="metrics-section">
+  <!-- CHARTS -->
+  <div class="charts-row">
+    <div class="chart-card">
       <div class="metrics-section-header">
-        <h3 class="panel-title" style="margin:0;border:none;padding:0;color:#fff;">
-          <i class="fas fa-chart-line"></i> Tren Error per Rentang Jarak
-        </h3>
-        <span class="metrics-section-sub">
-          ME = bias sistematis &nbsp;·&nbsp; RMSE = error total &nbsp;·&nbsp; SD = komponen acak
-        </span>
+        <h3><i class="fas fa-chart-bar"></i> RMSE per Site &amp; Skenario</h3>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;">
-        <div>
-          <div style="font-size:12px;font-weight:700;color:#1F3C88;margin-bottom:8px;">
-            <span class="mgh-badge">SS-RSRP</span>
-          </div>
-          <div class="line-chart-wrap">
-            <canvas id="lineChartRsrp"></canvas>
-          </div>
-        </div>
-        <div>
-          <div style="font-size:12px;font-weight:700;color:#1F3C88;margin-bottom:8px;">
-            <span class="mgh-badge">SS-SINR</span>
-          </div>
-          <div class="line-chart-wrap">
-            <canvas id="lineChartSinr"></canvas>
-          </div>
-        </div>
-      </div>
+      <div class="chart-body"><canvas id="chartPerFile"></canvas></div>
     </div>
-
-    <!-- TABEL METRIK -->
-    <div class="metrics-section">
+    <div class="chart-card">
       <div class="metrics-section-header">
-        <h3 class="panel-title" style="margin:0;border:none;padding:0;color:#fff;">
-          <i class="fas fa-table"></i> Metrik Akurasi per Rentang Jarak
-        </h3>
-        <span class="metrics-section-sub">
-          ME, RMSE, SD — point-to-point comparison
-        </span>
+        <h3><i class="fas fa-layer-group"></i> Rata-rata RMSE per Clutter</h3>
       </div>
-      <div style="padding:12px 16px;overflow-x:auto;">
-        <table class="dist-table" style="width:100%;">
-          <thead>
-            <tr>
-              <th rowspan="2" style="text-align:left;">Rentang Jarak</th>
-              <th rowspan="2">N</th>
-              <th colspan="3" style="border-bottom:1px solid rgba(255,255,255,0.3);">SS-RSRP (dBm)</th>
-              <th colspan="3" style="border-bottom:1px solid rgba(255,255,255,0.3);">SS-SINR (dB)</th>
-              <th rowspan="2">Kecenderungan</th>
-            </tr>
-            <tr>
-              <th>ME</th><th>RMSE</th><th>SD</th>
-              <th>ME</th><th>RMSE</th><th>SD</th>
-            </tr>
-          </thead>
-          <tbody id="metricTableBody">
-            <tr><td colspan="9" class="td-empty">Klik Analisis untuk melihat hasil</td></tr>
-          </tbody>
-        </table>
+      <div class="chart-body"><canvas id="chartPerClutter"></canvas></div>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div class="map-section" id="mapSection">
+    <div class="map-filter-bar">
+      <span class="map-filter-label">Filter:</span>
+      <select id="mapClutterFilter"><option value="all">Semua Clutter</option></select>
+      <select id="mapFileFilter"><option value="all">Semua File</option></select>
+
+      <div class="toolbar-divider"></div>
+
+      <span class="map-filter-label">Tampilkan:</span>
+      <div class="seg-toggle">
+        <button id="mapModeClutter" class="active">Clutter</button>
+        <button id="mapModeError">Error</button>
+      </div>
+      <div class="seg-toggle hidden" id="mapPhaseToggle">
+        <button id="mapPhaseBefore">Sebelum</button>
+        <button id="mapPhaseAfter" class="active">Sesudah</button>
       </div>
     </div>
-
-    <!-- ANALISIS VALIDASI -->
-    <div class="analysis-panel">
-      <h3 class="panel-title">
-        <i class="fas fa-chart-bar"></i> Analisis Validasi
-      </h3>
-      <div class="analysis-body">
-        <div id="conclusionContent">
-          <div class="waiting-notice">
-            <i class="fas fa-satellite-dish"></i>
-            Klik Analisis untuk melihat kesimpulan
-          </div>
-        </div>
+    <div class="map-wrap">
+      <div id="multiMap"></div>
+      <div id="multiMapPlaceholder" class="map-placeholder">
+        <i class="fas fa-map-location-dot"></i>
+        <p>Upload CSV untuk menampilkan titik drive test di peta</p>
+      </div>
+      <div class="map-legend">
+        <h4 id="mapLegendTitle">Clutter</h4>
+        <div id="mapLegendBody"></div>
       </div>
     </div>
-
-  </div><!-- /resultsSection -->
+  </div>
 
 </div><!-- /comp-page -->
 

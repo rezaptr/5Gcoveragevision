@@ -1,10 +1,3 @@
-/* ================================================
-   HELP & ABOUT PAGE — Seirama dengan tema utama
-   Font: Barlow Condensed (heading) + DM Sans (body)
-   Warna utama: #1F3C88, aksen: #2E86DE, #00D4AA
-   ================================================ */
-
-/* ── RESET & BASE ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
