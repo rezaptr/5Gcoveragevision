@@ -16,8 +16,10 @@ from authlib.integrations.flask_client import OAuth
 
 # ================= APP =================
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.secret_key = os.getenv("SECRET_KEY", "dev")
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['PREFERRED_URL_SCHEME'] = 'https'
 
 # ================= GOOGLE OAUTH =================
 oauth = OAuth(app)
@@ -264,7 +266,7 @@ def google_callback():
         return redirect(url_for('login'))
     finally:
         release_db_connection(conn)
-        
+
 @app.route('/choose-role', methods=['GET', 'POST'])
 def choose_role():
     if 'pending_user_id' not in session:
