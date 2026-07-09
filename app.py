@@ -280,9 +280,9 @@ def main():
     print(f"[TIMER] /main render: {time.time() - start:.3f}s")
     return result
 
-@app.route('/google6f35a6c71e1b8732.html')
+@app.route('/googlee1e3dc2a59d715b7.html')
 def google_verify():
-    return "google-site-verification: google6f35a6c71e1b8732.html"
+    return "google-site-verification: googlee1e3dc2a59d715b7.html"
 
 @app.route('/route')
 @role_required(['dt_engineer', 'rf_engineer'])
