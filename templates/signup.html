@@ -31,10 +31,40 @@
     <div class="card-right">
       <div class="form-header">
         <h1>SIGN UP</h1>
+        {% if google_flow %}
+        <p class="subtitle">Satu langkah lagi — pilih role Anda untuk melanjutkan.</p>
+        {% else %}
         <p class="subtitle">Daftarkan akun baru untuk mulai simulasi.</p>
+        {% endif %}
       </div>
 
-      <form method="POST" action="{{ url_for('signup') }}" class="auth-form">
+      <form method="POST" action="{% if google_flow %}{{ url_for('choose_role') }}{% else %}{{ url_for('signup') }}{% endif %}" class="auth-form">
+
+        {% if google_flow %}
+        <!-- Mode lanjutan Google: nama, email, password sudah didapat dari Google -->
+        <div class="input-group">
+          <label class="input-label">Nama Lengkap</label>
+          <input type="text" class="login-input" value="{{ google_name }}" disabled>
+        </div>
+
+        <div class="input-group">
+          <label class="input-label">Email Address</label>
+          <input type="email" class="login-input" value="{{ google_email }}" disabled>
+        </div>
+
+        <div class="input-group">
+          <label class="input-label">Role Pekerjaan</label>
+          <select name="role" class="login-input select-input" required>
+            <option value="" disabled selected>Pilih Role</option>
+            <option value="dt_engineer">DT Engineer</option>
+            <option value="rf_engineer">RF Engineer</option>
+          </select>
+        </div>
+
+        <button type="submit" class="btn-auth-submit">SELESAIKAN PENDAFTARAN</button>
+
+        {% else %}
+        <!-- Mode signup manual biasa -->
         <div class="input-row">
           <div class="input-group">
             <label class="input-label">Nama Lengkap</label>
@@ -73,6 +103,11 @@
           Sudah mempunyai akun?
           <a href="{{ url_for('login') }}">Login Here</a>
         </p>
+
+        <p class="auth-footer-text">
+          <a href="{{ url_for('login_google') }}">Sign up dengan Google</a>
+        </p>
+        {% endif %}
       </form>
     </div>
 

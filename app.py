@@ -9,11 +9,25 @@ import openpyxl
 import psycopg2
 from psycopg2 import pool
 from functools import wraps
+from dotenv import load_dotenv 
+load_dotenv()
+
+from authlib.integrations.flask_client import OAuth
 
 # ================= APP =================
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev")
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
+# ================= GOOGLE OAUTH =================
+oauth = OAuth(app)
+google = oauth.register(
+    name='google',
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+    client_kwargs={'scope': 'openid email profile'}
+)
 
 # ================= FOLDER =================
 PROFILE_UPLOAD_FOLDER = 'static/uploads'
@@ -183,6 +197,124 @@ def signup():
         return redirect(url_for('login'))
 
     return render_template('signup.html')
+# ================= GOOGLE LOGIN =================
+@app.route('/login/google')
+def login_google():
+    redirect_uri = url_for('google_callback', _external=True)
+    return google.authorize_redirect(redirect_uri)
+
+
+@app.route('/login/google/callback')
+def google_callback():
+    try:
+        token = google.authorize_access_token()
+        user_info = token.get('userinfo')
+    except Exception as e:
+        print("Google OAuth error:", e)
+        flash("Gagal login dengan Google!")
+        return redirect(url_for('login'))
+
+    google_id = user_info['sub']
+    email     = user_info['email']
+    full_name = user_info.get('name', email)
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, role, full_name, profile_image, google_id
+            FROM users WHERE google_id = %s OR email = %s
+        """, (google_id, email))
+        user = cur.fetchone()
+
+        if user:
+            if not user[4]:
+                cur.execute("UPDATE users SET google_id = %s WHERE id = %s", (google_id, user[0]))
+                conn.commit()
+
+            if not user[1]:
+                session['pending_user_id'] = user[0]
+                cur.close()
+                return redirect(url_for('choose_role'))
+
+            session.clear()
+            session['user_id']       = user[0]
+            session['role']          = user[1]
+            session['full_name']     = user[2]
+            session['email']         = email
+            session['profile_image'] = user[3]
+            cur.close()
+            return redirect(url_for('main'))
+
+        else:
+            cur.execute("""
+                INSERT INTO users (full_name, email, password, role, google_id)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
+            """, (full_name, email, None, None, google_id))
+            new_id = cur.fetchone()[0]
+            conn.commit()
+            cur.close()
+
+            session['pending_user_id'] = new_id
+            return redirect(url_for('choose_role'))
+
+    except Exception as e:
+        print("Google callback error:", e)
+        flash("Terjadi kesalahan saat login Google!")
+        return redirect(url_for('login'))
+    finally:
+        release_db_connection(conn)
+        
+@app.route('/choose-role', methods=['GET', 'POST'])
+def choose_role():
+    if 'pending_user_id' not in session:
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        role = request.form.get('role')
+        if role not in ('dt_engineer', 'rf_engineer'):
+            flash("Role tidak valid!")
+            return redirect(url_for('choose_role'))
+
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE users SET role = %s WHERE id = %s
+                RETURNING id, full_name, email, profile_image
+            """, (role, session['pending_user_id']))
+            user = cur.fetchone()
+            conn.commit()
+            cur.close()
+        finally:
+            release_db_connection(conn)
+
+        session.pop('pending_user_id', None)
+        session.clear()
+        session['user_id']       = user[0]
+        session['role']          = role
+        session['full_name']     = user[1]
+        session['email']         = user[2]
+        session['profile_image'] = user[3]
+
+        return redirect(url_for('main'))
+
+    # GET request -> ambil data user pending buat ditampilkan di form
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT full_name, email FROM users WHERE id = %s", (session['pending_user_id'],))
+        pending_user = cur.fetchone()
+        cur.close()
+    finally:
+        release_db_connection(conn)
+
+    return render_template(
+        'signup.html',
+        google_flow=True,
+        google_name=pending_user[0],
+        google_email=pending_user[1]
+    )
 
 # ================= PROFILE =================
 @app.route('/profile')

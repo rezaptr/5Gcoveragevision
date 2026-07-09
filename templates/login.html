@@ -62,6 +62,14 @@
 
         <button type="submit" class="btn-auth-submit">LOGIN</button>
 
+        <div class="divider-or">
+          <span>ATAU</span>
+        </div>
+
+        <a href="{{ url_for('login_google') }}" class="btn-google-auth">
+          <i class="fab fa-google"></i> Login dengan Google
+        </a>
+
         <p class="auth-footer-text">
           Belum mempunyai akun?
           <a href="{{ url_for('signup') }}">Sign Up Here</a>
@@ -71,6 +79,51 @@
 
   </div>
 </div>
+
+<style>
+  .divider-or {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 16px 0;
+    color: #999;
+    font-size: 13px;
+  }
+  .divider-or::before,
+  .divider-or::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid #ddd;
+  }
+  .divider-or span {
+    padding: 0 10px;
+  }
+  .btn-google-auth {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #fff;
+    color: #444;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 14px;
+    box-sizing: border-box;
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .btn-google-auth:hover {
+    background: #f7f7f7;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  }
+  .btn-google-auth i {
+    color: #4285F4;
+    font-size: 16px;
+  }
+</style>
 
 <script>
   document.addEventListener("DOMContentLoaded", function () {
