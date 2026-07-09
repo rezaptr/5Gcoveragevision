@@ -11,6 +11,7 @@ from psycopg2 import pool
 from functools import wraps
 from dotenv import load_dotenv 
 load_dotenv()
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from authlib.integrations.flask_client import OAuth
 
